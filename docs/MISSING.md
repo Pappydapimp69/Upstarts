@@ -1,5 +1,9 @@
 # What Upstarts is missing — gap blueprint
 
+> **Superseded in parts (2026-10-21):** damage is now D15 (HP from body mass) plus D17 (ratio-gated
+> bite cap); four species are playable (D16); calls, the call wheel and summed haptics are ported. The
+> damage numbers in §2 and §5 below describe the older square-root model and are kept as history.
+
 Written 2026-10-21, ZaneGPT-style: what's built, what isn't, where the plans contradict each other,
 and what to build in what order. Sources: `docs/BLUEPRINT.md` (roadmap M0–M9), the Dlist demo
 (`demos/skin-test`, `docs/PORTING.md`, `docs/TUTORIAL.md` on Dlist's working branch), and the Upstarts

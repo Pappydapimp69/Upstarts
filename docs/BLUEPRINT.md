@@ -65,6 +65,7 @@ starting points for tuning, not promises.
 | **Herrerasaurus** | 4.5–6 m, ~200–350 kg | Carnivore | Biggest dinosaur predator around. Strong bite. By design, it loses 1-on-1 to an adult Saurosuchus. |
 | **Eodromaeus** | ~1.2 m, ~5 kg | Carnivore | Fast, fragile, hunts small prey, scavenges, survives by running. |
 | **Panphagia** | ~1.3 m (the known fossil is a juvenile) | Omnivore | Eats plants, small prey and carrion. The flexible "easy mode." |
+| **Sanjuansaurus** | ~3 m (estimate) | Carnivore | Mid-size herrerasaurid, pulled forward from the later candidates (D16). |
 
 ### NPC creatures (v1)
 | Species | Size | Role |
@@ -76,7 +77,7 @@ starting points for tuning, not promises.
 | **Saurosuchus** | ~6–7 m (some estimates larger) | Apex predator, a crocodile-relative. Hunts the player. Rare, roams territories. |
 
 ### Later candidates
-Playable: Eoraptor, Sanjuansaurus, Chromogisaurus.
+Playable: Eoraptor, Chromogisaurus (Sanjuansaurus is now playable, D16).
 NPC: Sillosuchus (a big beaked crocodile-relative), small cynodonts, and fish
 or insects as ambient life.
 
@@ -437,6 +438,7 @@ time on art (M5).**
 | D14 | Non-dinosaur reptiles sleep at night; dinosaurs, the player included, stay active. | LOCKED |
 | D15 | Hit points come from the body: max HP scales with mass^(2/3) (size and weight), 100 HP for an adult Herrerasaurus; bite damage in HP scales the same way with the attacker, times bite strength, divided by the defender's armor. Bigger animals have more HP. | LOCKED |
 | D16 | Playable now: Herrerasaurus, Sanjuansaurus, Eodromaeus, Panphagia, chosen at each hatch. Sanjuansaurus is pulled forward from the later candidates as the mid-size option. | LOCKED |
+| D17 | Per-bite cap on the defender's max HP, gated by mass ratio r: 40% up to r = 3, rising on a log scale to 100% at r = 8, uniform for every bite (ZaneGPT review, Brain sandbox-power-scaling E2). Saurosuchus kills an adult Herrerasaurus in 3 bites, a sub-adult in 2, a juvenile in 1. | LOCKED |
 
 ---
 
