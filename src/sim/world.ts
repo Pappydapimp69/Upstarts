@@ -13,6 +13,7 @@ import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './
 import { biteDamage } from './combat';
 import { bodyOf, GROWTH } from './growth';
 import type { SoundEvent } from './events';
+import { SPRINT_DB, STEP_DB } from './hearing';
 import { CALLS, callLevel, heardAt, HERD_HEARS, roarStyle, SAURO_HEARS } from './calls';
 
 export const TICK_HZ = 30;
@@ -127,21 +128,30 @@ function pickGoal(w: World, herd: Herd): void {
 function addHerbivore(w: World, herd: Herd, x: number, z: number): void {
   w.herbivores.push({
     id: w.nextId++, herd: herd.id, x, z, yaw: w.rng.herd() * Math.PI * 2, speed: 0, health: 1, stamina: 1,
-    state: 'graze', stateT: w.rng.herd() * 6, threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: w.rng.herd() * Math.PI * 2,
+    state: 'graze', stateT: w.rng.herd() * 6, threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: w.rng.herd() * Math.PI * 2, gait: 0,
   });
 }
 
-// What the herbivores can sense of the player this tick. Footsteps carry further the faster
-// and heavier it goes.
-const noiseOf = (speed: number, mass: number): number => (speed < 0.3 ? 0 : (3 + speed * 3) * Math.cbrt(mass / 350));
+// What the herbivores can see of a predator this tick (hearing goes through sound events).
 function predatorOf(d: Dino): Predator {
-  return { x: d.x, z: d.z, speed: d.speed, noise: noiseOf(d.speed, d.body.mass), alive: d.alive, mass: d.body.mass, stealth: 1 };
+  return { id: PLAYER_ID, x: d.x, z: d.z, speed: d.speed, alive: d.alive, mass: d.body.mass, stealth: 1 };
 }
 function predatorOfSauro(s: Sauro): Predator {
   return {
-    x: s.x, z: s.z, speed: s.speed, noise: noiseOf(s.speed, SAUROSUCHUS.mass) * (s.state === 'stalk' ? 0.4 : 1),
+    id: s.id, x: s.x, z: s.z, speed: s.speed,
     alive: s.state !== 'dead', mass: SAUROSUCHUS.mass, stealth: s.state === 'stalk' ? SAUROSUCHUS.stealth : 1,
   };
+}
+
+// Footfall sound events, timed by each animal's gait: `per` footfalls per stride of length `stride` m.
+// quiet (dB) is taken off a deliberately soft step (a stalking Saurosuchus).
+function footfalls(w: World, o: { gait: number }, id: number, x: number, z: number, mass: number, speed: number,
+  stride: number, per: number, dt: number, extraDb = 0): void {
+  if (speed < 0.05) return;
+  const g0 = Math.floor(o.gait);
+  o.gait += (speed / stride) * per * dt;
+  if (Math.floor(o.gait) === g0) return;
+  w.events.push({ kind: 'step', who: id === PLAYER_ID ? 'player' : 'prey', id, x, y: heightAt(x, z), z, level: STEP_DB(mass, speed) + extraDb });
 }
 
 // Something alive in reach of the jaws, straight ahead.
@@ -245,7 +255,9 @@ function approach(d: Dino, yaw: number, dist: number, reach: number, act: Act): 
 export function step(w: World, cmd: Command): void {
   const d = w.player;
   const dt = TICK_DT;
-  w.events.length = 0; // last tick's sounds have been read by now
+  // Last tick's sounds are what everyone hears this tick (an order-free snapshot); this tick's start empty.
+  const heard = w.events.slice();
+  w.events.length = 0;
 
   if (!d.alive) {
     stepDino(d, cmd, dt);
@@ -339,6 +351,10 @@ export function step(w: World, cmd: Command): void {
     stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, needPace(d.species.mass));
     d.age += dt;
     d.hitT += dt;
+    // Footfalls: stride from Alexander's relation, two feet per stride; a sprint slams (+10 dB noise rating).
+    const v = d.speed, legL = d.body.leg;
+    const stride = Math.max(0.8 * d.body.size, 2.3 * legL * Math.pow((v * v) / (9.81 * legL), 0.3));
+    footfalls(w, d, PLAYER_ID, d.x, d.z, d.body.mass, v, stride, 2, dt, isSprinting(d, cmd) ? SPRINT_DB : 0);
     d.callT += dt;
     // Calls: one at a time. Loud ones startle the herds that hear them, and draw a hungry Saurosuchus.
     if (cmd.call && d.callT >= d.callDur) {
@@ -380,15 +396,15 @@ export function step(w: World, cmd: Command): void {
   const quarry: Quarry[] = [];
   if (w.player.alive) {
     const p = w.player;
-    quarry.push({ id: PLAYER_ID, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass, noise: noiseOf(p.speed, p.body.mass) });
+    quarry.push({ id: PLAYER_ID, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass });
   }
   for (const h of w.herbivores) {
-    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass, noise: noiseOf(h.speed, HYPERODAPEDON.mass) });
+    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass });
   }
   for (const s of w.sauros) {
     const was = s.state;
     stepSauro(s, {
-      now, rand: w.rng.ai, quarry, carcasses: w.carcasses,
+      now, rand: w.rng.ai, quarry, heard, carcasses: w.carcasses,
       bite: (id) => {
         w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 2.6, 0.9), level: 96 });
         if (id === PLAYER_ID) {
@@ -421,6 +437,8 @@ export function step(w: World, cmd: Command): void {
         return e;
       },
     }, dt);
+    // Four footfalls per stride; stalking, it places its feet softly (-10 dB).
+    footfalls(w, s, s.id, s.x, s.z, SAUROSUCHUS.mass, s.speed, 2.2, 4, dt, s.state === 'stalk' ? -10 : 0);
     // The charge starts with a growl: the ambush gives itself away at the last moment.
     if (s.state === 'charge' && was !== 'charge') w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });
     // A kill becomes a carcass where it fell; it eats from that.
@@ -454,7 +472,8 @@ export function step(w: World, cmd: Command): void {
   const preds = [predatorOf(w.player), ...w.sauros.map(predatorOfSauro)];
   for (const h of w.herbivores) {
     const herd = w.herds[h.herd];
-    stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now);
+    stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now, heard);
+    footfalls(w, h, h.id, h.x, h.z, HYPERODAPEDON.mass, h.speed, 0.9, 4, dt);
   }
   for (const h of w.herbivores) {
     if (h.state === 'dead' && h.health > -1) placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat);

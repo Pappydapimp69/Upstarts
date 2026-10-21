@@ -167,6 +167,9 @@ export class AudioLayer {
     if (!this.live) return;
     const S = this.S;
     switch (ev.kind) {
+      // Footfall events are for hearing; their sound is played in time with the animated feet instead.
+      case 'step':
+        break;
       case 'bite': {
         const src = ev.who === 'saurosuchus' ? S.sauroJaw : S.jaw;
         this.at(src, ev);

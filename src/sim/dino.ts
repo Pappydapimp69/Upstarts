@@ -44,13 +44,14 @@ export interface Dino {
   hitT: number; // s since it was last bitten
   callT: number; // s since its last call started
   callDur: number; // length of that call, s
+  gait: number; // footfalls so far (2 per stride), for footstep events
   sniff: { yaw: number; strength: number } | null; // strongest scent while sniffing
 }
 
 export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
     species, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, sniff: null,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null,
   };
 }
 

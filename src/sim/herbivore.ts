@@ -2,6 +2,8 @@ import { clamp, damp, lerp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
+import { heardFrom } from './hearing';
+import type { SoundEvent } from './events';
 
 // Hyperodapedon: beaked rhynchosaur, the most common animal in the valley and
 // the main prey. Herding and the numbers below are game design informed by the
@@ -18,7 +20,7 @@ export const HYPERODAPEDON = {
   fleeTired: 3.0, // once its sprint stamina is gone
   turn: 3.2, // rad/s: a stocky body, but it jinks faster than a big biped at speed
   sight: 60, // m (dlist/E18: about range + chaser speed x alarm spread + herd depth)
-  hearing: 1, // multiplier on the noise radius of whatever it hears
+  hears: 45, // dB: the quietest footfall or call it notices
   smell: 0.18, // plume concentration that counts as smelling a predator
   ignoreBelow: 24, // kg: predators smaller than this aren't worth running from
 };
@@ -42,6 +44,7 @@ export interface Herbivore {
   startleAt: number; // world time it heard a call loud enough to bolt (kept apart from alarmAt, which neighbours copy)
   bleeding: number; // s of bleeding left
   aim: number; // yaw it's drifting toward while grazing
+  gait: number; // footfalls so far (4 per stride), for footstep events
 }
 
 export interface Herd {
@@ -56,7 +59,7 @@ export interface Predator {
   x: number;
   z: number;
   speed: number;
-  noise: number; // m radius its movement can be heard at
+  id: number; // entity id, to match the sound events it made
   alive: boolean;
   mass: number; // kg
   stealth: number; // multiplier on how far away it can be seen (1 = in the open)
@@ -68,7 +71,7 @@ const QUORUM = 2; // fleeing neighbours needed to start fleeing (dlist/E18: k=2)
 const PANIC = 14; // m: closer than this and it flees without waiting
 const CALM = 6; // s without sensing the predator before a fleeing animal settles
 
-export function senses(h: Herbivore, p: Predator): boolean {
+export function senses(h: Herbivore, p: Predator, heard: SoundEvent[] = []): boolean {
   if (!p.alive || p.mass < HYPERODAPEDON.ignoreBelow) return false;
   const dx = p.x - h.x, dz = p.z - h.z;
   const d = Math.hypot(dx, dz);
@@ -76,11 +79,11 @@ export function senses(h: Herbivore, p: Predator): boolean {
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - h.yaw)) < 2.4;
   const visible = HYPERODAPEDON.sight * p.stealth * (0.25 + 0.75 * clamp(p.speed / 4, 0, 1));
   if (ahead && d < visible) return true;
-  if (d < p.noise * HYPERODAPEDON.hearing) return true;
+  if (heardFrom(heard, p.id, h.x, h.z, HYPERODAPEDON.hears)) return true;
   return plume(p.x, p.z, 1, h.x, h.z) > HYPERODAPEDON.smell;
 }
 
-export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds: Predator[], rand: () => number, dt: number, now: number): void {
+export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds: Predator[], rand: () => number, dt: number, now: number, heard: SoundEvent[] = []): void {
   if (h.state === 'dead') {
     h.speed = Math.max(0, h.speed - 6 * dt);
     return;
@@ -90,7 +93,7 @@ export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds:
   // The nearest predator it can sense is the one it runs from.
   let p: Predator | null = null;
   for (const k of preds) {
-    if (senses(h, k) && (!p || Math.hypot(k.x - h.x, k.z - h.z) < Math.hypot(p.x - h.x, p.z - h.z))) p = k;
+    if (senses(h, k, heard) && (!p || Math.hypot(k.x - h.x, k.z - h.z) < Math.hypot(p.x - h.x, p.z - h.z))) p = k;
   }
   const sensed = !!p;
   if (p) {

@@ -4,6 +4,8 @@ import { createDino, type Command } from '../src/sim/dino';
 import { HERRERASAURUS } from '../src/sim/species';
 import { HYPERODAPEDON, senses, type Herbivore } from '../src/sim/herbivore';
 import { plume, WIND } from '../src/sim/scent';
+import { SPRINT_DB, STEP_DB } from '../src/sim/hearing';
+import type { SoundEvent } from '../src/sim/events';
 
 const idle: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
@@ -26,7 +28,7 @@ function oneHerd(px: number, pz: number): World {
 const fleeing = (w: World): number => w.herbivores.filter((h) => h.state === 'flee').length;
 const herbAt = (x: number, z: number, yaw = 0): Herbivore => ({
   id: 1, herd: 0, x, z, yaw, speed: 0, health: 1, stamina: 1, state: 'graze', stateT: 0,
-  threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: 0,
+  threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: 0, gait: 0,
 });
 
 describe('scent', () => {
@@ -37,18 +39,20 @@ describe('scent', () => {
 });
 
 describe('herbivore senses', () => {
-  const still = { x: 0, z: 0, speed: 0, noise: 0, alive: true, mass: 350, stealth: 1 };
+  const still = { id: 0, x: 0, z: 0, speed: 0, alive: true, mass: 350, stealth: 1 };
   it('smells a still predator upwind of it, but not one downwind', () => {
     // Upwind predator, prey 30 m downwind and facing away.
     expect(senses(herbAt(WIND.x * 30, WIND.z * 30, Math.atan2(WIND.x, WIND.z)), still)).toBe(true);
     expect(senses(herbAt(-WIND.x * 30, -WIND.z * 30, Math.atan2(-WIND.x, -WIND.z)), still)).toBe(false);
   });
-  it('hears a sprinting predator behind it', () => {
-    const run = { x: 0, z: 0, speed: 7, noise: 3 + 7 * 3, alive: true, mass: 350, stealth: 1 };
+  it('hears a sprinting predator behind it through its footfall events, not a walking one', () => {
+    const p = { id: 0, x: 0, z: 0, speed: 7, alive: true, mass: 350, stealth: 1 };
     // Crosswind so smell can't help, facing away so sight can't.
     const h = herbAt(WIND.z * 20, -WIND.x * 20, Math.atan2(WIND.z, -WIND.x));
-    expect(senses(h, run)).toBe(true);
-    expect(senses(h, { ...run, speed: 0, noise: 0 })).toBe(false);
+    const step = (speed: number, extra: number): SoundEvent => ({ kind: 'step', who: 'player', id: 0, x: 0, y: 0, z: 0, level: STEP_DB(350, speed) + extra });
+    expect(senses(h, p, [step(7, SPRINT_DB)])).toBe(true); // 77 dB at 1 m: 51 dB at 20 m
+    expect(senses(h, { ...p, speed: 0 }, [step(3.4, 0)])).toBe(false); // 62 dB at 1 m: 36 dB at 20 m
+    expect(senses(h, { ...p, speed: 0 }, [])).toBe(false);
   });
 });
 

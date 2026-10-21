@@ -2,6 +2,8 @@ import { clamp, damp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
+import { heardFrom } from './hearing';
+import type { SoundEvent } from './events';
 
 // Saurosuchus: the apex predator, a big crocodile-line archosaur. Rare, roams a
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
@@ -27,6 +29,7 @@ export const SAUROSUCHUS = {
   hide: 1.5, // osteoderms down the back: bites do two thirds of the damage
   sight: 50,
   smell: 0.12,
+  hears: 45, // dB: the quietest footfall or call it notices
   stealth: 0.35, // multiplier on how far away prey can see it while it stalks (low and crouched)
   eatRate: 1, // kg/s
   fullAfter: 40, // kg eaten before it's sated
@@ -58,6 +61,7 @@ export interface Sauro {
   lastMeal: number; // world time (s)
   eaten: number; // kg this meal
   biteT: number;
+  gait: number; // footfalls so far (4 per stride), for footstep events
 }
 
 // Something it could hunt this tick: the player or a herbivore.
@@ -68,13 +72,12 @@ export interface Quarry {
   speed: number;
   topSpeed: number;
   mass: number;
-  noise: number;
 }
 
 export function createSauro(id: number, x: number, z: number): Sauro {
   return {
     id, x, z, yaw: 0, speed: 0, health: 1, stamina: 1, state: 'patrol', stateT: 0, homeX: x, homeZ: z,
-    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9,
+    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0,
   };
 }
 
@@ -85,11 +88,11 @@ export function catchRadius(vq: number): number {
   return S.charge * S.react + Math.max(0, (S.charge - vq) * (S.sprintTime - S.react));
 }
 
-export function sensesQuarry(s: Sauro, q: Quarry): boolean {
+export function sensesQuarry(s: Sauro, q: Quarry, heard: SoundEvent[] = []): boolean {
   const dx = q.x - s.x, dz = q.z - s.z, d = Math.hypot(dx, dz);
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - s.yaw)) < 1.4;
   if (ahead && d < SAUROSUCHUS.sight) return true;
-  if (d < q.noise) return true;
+  if (heardFrom(heard, q.id, s.x, s.z, SAUROSUCHUS.hears)) return true;
   return plume(q.x, q.z, 1, s.x, s.z) > SAUROSUCHUS.smell;
 }
 
@@ -97,6 +100,7 @@ export interface SauroWorld {
   now: number;
   rand: () => number;
   quarry: Quarry[];
+  heard?: SoundEvent[]; // last tick's sound events
   // Carcasses it can eat: id, position, meat.
   carcasses: { id: number; x: number; z: number; meat: number }[];
   // Called when its jaws close on something: returns nothing; the world applies damage.
@@ -147,7 +151,7 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
           // Small fry isn't worth a hunt, but it snaps at anything that wanders close.
           const near = Math.hypot(k.x - s.x, k.z - s.z) < 10;
           if ((k.mass < S.minPrey && !(near && k.mass >= 2)) || k.mass > S.mass * S.maxPreyFrac) continue;
-          if (!sensesQuarry(s, k)) continue;
+          if (!sensesQuarry(s, k, w.heard)) continue;
           if (Math.hypot(k.x - s.homeX, k.z - s.homeZ) > S.territory + 20) continue;
           const score = k.mass / (10 + Math.hypot(k.x - s.x, k.z - s.z));
           if (score > bestScore) {
