@@ -6,10 +6,16 @@
     <title>Upstarts</title>
     <style>
       html, body { margin: 0; height: 100%; background: #c9d6e3; overflow: hidden; }
-      canvas { display: block; }
+      canvas { display: block; touch-action: none; }
+      #hud { position: fixed; left: 16px; top: 12px; font: 13px/1.4 system-ui, sans-serif; color: #2b2118;
+        background: rgba(255,255,255,0.55); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+      #help { position: fixed; left: 16px; bottom: 12px; font: 12px/1.4 system-ui, sans-serif; color: #2b2118;
+        background: rgba(255,255,255,0.45); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
     </style>
   </head>
   <body>
+    <div id="hud"></div>
+    <div id="help">WASD move · Shift sprint · drag to look · C camera behind · or a controller</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
