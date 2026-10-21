@@ -25,6 +25,7 @@ export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bi
 
 export interface Dino {
   species: Species;
+  owner: number; // player number that controls it (-1: nobody)
   growth: number; // 0 hatchling .. 1 adult
   body: Body; // species numbers at the current growth
   x: number;
@@ -50,7 +51,7 @@ export interface Dino {
 
 export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
-    species, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
+    species, owner: -1, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
     needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null,
   };
 }

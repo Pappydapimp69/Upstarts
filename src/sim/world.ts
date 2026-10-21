@@ -1,6 +1,6 @@
 // Game state and rules. No Three.js or DOM here: the sim must be able to run
 // in a Web Worker or on a server unchanged (blueprint D2, D7).
-import { createDino, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
+import { createDino, IDLE, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
 import { NEEDS, needPace, stepNeeds } from './needs';
 import { browseAt } from './flora';
 import { heightAt, SPAWNS, waterDepthAt } from './terrain';
@@ -60,7 +60,19 @@ export const SAUROS = {
   respawn: 600, // s after one dies before another moves in
 };
 
-export const PLAYER_ID = 0; // ids from nextId start at 1
+export const PLAYER_ID = 0; // the local player's creature; other players' are -1, -2, ... (nextId starts at 1)
+
+// A player in the world (blueprint §6: player identity lives in the world state from day one, open tension
+// T3). Solo play has one slot; co-op adds more. A slot owns its creature, its choice of species and its
+// history; creatures record their owner, so nothing assumes there is only one player.
+export interface PlayerSlot {
+  id: number; // player number, 0 = local
+  entity: number; // its creature's entity id (PLAYER_ID - id), stable across deaths
+  speciesId: SpeciesId; // what it hatches as next
+  dino: Dino;
+  lives: number;
+  lastDeath: Death | null;
+}
 
 export interface Death {
   age: number; // s it lived
@@ -75,28 +87,39 @@ export interface World {
   // One seeded stream per system, so a change in how often one system draws never shifts another's rolls
   // (Brain: test E2, prologue E22).
   rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number };
+  players: PlayerSlot[];
+  // The local player (players[0]): its creature, last death, lives and species. Accessors, kept so the
+  // client and tests can address "the player" without knowing about slots.
   player: Dino;
-  carcasses: Carcass[];
-  nextId: number;
   lastDeath: Death | null;
   lives: number;
+  carcasses: Carcass[];
+  nextId: number;
   needScale: number; // 1 = real time; tests and ?fast speed it up
   herds: Herd[];
   herbivores: Herbivore[];
   sauros: Sauro[];
   sauroGoneAt: number; // world time the last one died, -1 if alive
   startGrowth: number; // what new animals hatch at (0 = hatchling)
-  speciesId: SpeciesId; // what the player hatches as
+  speciesId: SpeciesId; // what the local player hatches as next (accessor)
   events: SoundEvent[]; // sounds made this tick; the client drains them
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
 export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus'): World {
   const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1) };
-  const w: World = {
-    tick: 0, seed, rng: streams, player: spawnDino(streams.spawn, startGrowth, speciesId), speciesId, carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
+  const w = {
+    tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale,
     herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth, events: [],
-  };
+  } as unknown as World;
+  const local = (): PlayerSlot => w.players[0];
+  Object.defineProperties(w, {
+    player: { get: () => local().dino, set: (d: Dino) => { d.owner = local().id; local().dino = d; }, enumerable: true },
+    lastDeath: { get: () => local().lastDeath, set: (v: Death | null) => (local().lastDeath = v), enumerable: true },
+    lives: { get: () => local().lives, set: (v: number) => (local().lives = v), enumerable: true },
+    speciesId: { get: () => local().speciesId, set: (v: SpeciesId) => (local().speciesId = v), enumerable: true },
+  });
+  addPlayer(w, speciesId);
   for (const h of SAUROS.homes) w.sauros.push(createSauro(w.nextId++, h.x, h.z));
   for (let i = 0; i < CARCASS.start; i++) placeCarcass(w);
   for (let i = 0; i < HERDS.count; i++) {
@@ -133,8 +156,9 @@ function addHerbivore(w: World, herd: Herd, x: number, z: number): void {
 }
 
 // What the herbivores can see of a predator this tick (hearing goes through sound events).
-function predatorOf(d: Dino): Predator {
-  return { id: PLAYER_ID, x: d.x, z: d.z, speed: d.speed, alive: d.alive, mass: d.body.mass, stealth: 1 };
+function predatorOf(slot: PlayerSlot): Predator {
+  const d = slot.dino;
+  return { id: slot.entity, x: d.x, z: d.z, speed: d.speed, alive: d.alive, mass: d.body.mass, stealth: 1 };
 }
 function predatorOfSauro(s: Sauro): Predator {
   return {
@@ -151,7 +175,7 @@ function footfalls(w: World, o: { gait: number }, id: number, x: number, z: numb
   const g0 = Math.floor(o.gait);
   o.gait += (speed / stride) * per * dt;
   if (Math.floor(o.gait) === g0) return;
-  w.events.push({ kind: 'step', who: id === PLAYER_ID ? 'player' : 'prey', id, x, y: heightAt(x, z), z, level: STEP_DB(mass, speed) + extraDb });
+  w.events.push({ kind: 'step', who: id <= PLAYER_ID ? 'player' : 'prey', id, x, y: heightAt(x, z), z, level: STEP_DB(mass, speed) + extraDb });
 }
 
 // Something alive in reach of the jaws, straight ahead.
@@ -228,20 +252,31 @@ function mouth(x: number, z: number, yaw: number, reach: number, up: number): { 
   return { x: mx, y: groundY(mx, mz) + up, z: mz };
 }
 
-// Before the game starts: hatch the player as another species at a fresh spawn.
-export function hatchAs(w: World, id: SpeciesId): void {
-  w.speciesId = id;
-  w.player = spawnDino(w.rng.spawn, w.startGrowth, id);
+// Join a player: a new slot with a fresh hatchling. Returns the slot.
+export function addPlayer(w: World, speciesId: SpeciesId): PlayerSlot {
+  const id = w.players.length;
+  const slot: PlayerSlot = { id, entity: PLAYER_ID - id, speciesId, dino: spawnDino(w.rng.spawn, w.startGrowth, speciesId), lives: 1, lastDeath: null };
+  slot.dino.owner = id;
+  w.players.push(slot);
+  return slot;
 }
 
-function killPlayer(w: World, cause: Death['cause']): void {
-  const d = w.player;
+// Before the game starts: hatch a player as another species at a fresh spawn.
+export function hatchAs(w: World, id: SpeciesId, player = 0): void {
+  const slot = w.players[player];
+  slot.speciesId = id;
+  slot.dino = spawnDino(w.rng.spawn, w.startGrowth, id);
+  slot.dino.owner = slot.id;
+}
+
+function killPlayer(w: World, slot: PlayerSlot, cause: Death['cause']): void {
+  const d = slot.dino;
   d.alive = false;
   d.act = 'none';
   d.needs.health = 0;
   // Its body stays in the world as a carcass others can eat, from the moment it dies.
   placeCarcassAt(w, d.x, d.z, d.yaw, d.body.meat);
-  w.lastDeath = { age: d.age, growth: d.growth, cause, carcassId: w.carcasses[w.carcasses.length - 1].id };
+  slot.lastDeath = { age: d.age, growth: d.growth, cause, carcassId: w.carcasses[w.carcasses.length - 1].id };
 }
 
 // Turn to face a point, creep up until the lowered snout is over it, then act.
@@ -252,19 +287,16 @@ function approach(d: Dino, yaw: number, dist: number, reach: number, act: Act): 
   return { act, ov: { yaw, target: 0, turnCap: 1.4, steer: true } };
 }
 
-export function step(w: World, cmd: Command): void {
-  const d = w.player;
-  const dt = TICK_DT;
-  // Last tick's sounds are what everyone hears this tick (an order-free snapshot); this tick's start empty.
-  const heard = w.events.slice();
-  w.events.length = 0;
-
+// One player's creature for one tick: its actions, needs, footfalls, calls and growth.
+function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void {
+  const d = slot.dino;
   if (!d.alive) {
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
-      if (cmd.species) w.speciesId = cmd.species;
-      w.player = spawnDino(w.rng.spawn, w.startGrowth, w.speciesId);
-      w.lives++;
+      if (cmd.species) slot.speciesId = cmd.species;
+      slot.dino = spawnDino(w.rng.spawn, w.startGrowth, slot.speciesId);
+      slot.dino.owner = slot.id;
+      slot.lives++;
     }
   } else {
     // Hold to drink or eat. Drinking wins if both are in reach.
@@ -309,7 +341,7 @@ export function step(w: World, cmd: Command): void {
           if (s.health <= 0) s.state = 'dead';
           // Bitten, it turns on whatever bit it, hungry or not.
           else if (s.state !== 'retreat' && s.state !== 'charge') {
-            s.target = PLAYER_ID;
+            s.target = slot.entity;
             s.state = 'charge';
             s.stateT = 0;
           }
@@ -354,7 +386,7 @@ export function step(w: World, cmd: Command): void {
     // Footfalls: stride from Alexander's relation, two feet per stride; a sprint slams (+10 dB noise rating).
     const v = d.speed, legL = d.body.leg;
     const stride = Math.max(0.8 * d.body.size, 2.3 * legL * Math.pow((v * v) / (9.81 * legL), 0.3));
-    footfalls(w, d, PLAYER_ID, d.x, d.z, d.body.mass, v, stride, 2, dt, isSprinting(d, cmd) ? SPRINT_DB : 0);
+    footfalls(w, d, slot.entity, d.x, d.z, d.body.mass, v, stride, 2, dt, isSprinting(d, cmd) ? SPRINT_DB : 0);
     d.callT += dt;
     // Calls: one at a time. Loud ones startle the herds that hear them, and draw a hungry Saurosuchus.
     if (cmd.call && d.callT >= d.callDur) {
@@ -390,13 +422,23 @@ export function step(w: World, cmd: Command): void {
       d.body = bodyOf(d.species, d.growth);
     }
   }
+}
+
+// cmd: the local player's command, or one per player number for co-op.
+export function step(w: World, cmd: Command | Record<number, Command>): void {
+  const dt = TICK_DT;
+  // Last tick's sounds are what everyone hears this tick (an order-free snapshot); this tick's start empty.
+  const heard = w.events.slice();
+  w.events.length = 0;
+  const cmds: Record<number, Command> = 'moveX' in cmd ? { 0: cmd as Command } : (cmd as Record<number, Command>);
+  for (const slot of w.players) stepPlayer(w, slot, cmds[slot.id] ?? IDLE, dt);
 
   // Saurosuchus: hunts the player and the herds, eats carcasses.
   const now = w.tick * TICK_DT;
   const quarry: Quarry[] = [];
-  if (w.player.alive) {
-    const p = w.player;
-    quarry.push({ id: PLAYER_ID, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass });
+  for (const slot of w.players) {
+    const p = slot.dino;
+    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass });
   }
   for (const h of w.herbivores) {
     if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass });
@@ -407,14 +449,15 @@ export function step(w: World, cmd: Command): void {
       now, rand: w.rng.ai, quarry, heard, carcasses: w.carcasses,
       bite: (id) => {
         w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 2.6, 0.9), level: 96 });
-        if (id === PLAYER_ID) {
-          const p = w.player;
+        const slot = w.players.find((k) => k.entity === id);
+        if (slot) {
+          const p = slot.dino;
           const share = biteDamage(SAUROSUCHUS.mass, p.body.mass, SAUROSUCHUS.biteMult);
           p.needs.health = Math.max(0, p.needs.health - share);
           w.events.push({ kind: 'hit', who: 'saurosuchus', x: p.x, y: groundY(p.x, p.z) + 0.8 * p.body.hip, z: p.z, level: 80 + 8 * share, share });
           w.events.push({ kind: 'call', who: 'player', call: 'yelp', ...mouth(p.x, p.z, p.yaw, p.body.snout, 0.9 * p.body.hip), level: 92 + 10 * Math.log10(p.body.mass / 350) });
           p.hitT = 0;
-          if (p.needs.health <= 0 && p.alive) killPlayer(w, 'Saurosuchus');
+          if (p.needs.health <= 0 && p.alive) killPlayer(w, slot, 'Saurosuchus');
         } else {
           const h = w.herbivores.find((k) => k.id === id);
           if (!h) return;
@@ -467,9 +510,12 @@ export function step(w: World, cmd: Command): void {
     w.sauros.push(createSauro(w.nextId++, h.x, h.z));
     w.sauroGoneAt = -1;
   }
-  if (w.player.alive && w.player.needs.health <= 0) killPlayer(w, w.player.needs.thirst <= 0 ? 'thirst' : 'hunger');
+  for (const slot of w.players) {
+    const p = slot.dino;
+    if (p.alive && p.needs.health <= 0) killPlayer(w, slot, p.needs.thirst <= 0 ? 'thirst' : 'hunger');
+  }
 
-  const preds = [predatorOf(w.player), ...w.sauros.map(predatorOfSauro)];
+  const preds = [...w.players.map(predatorOf), ...w.sauros.map(predatorOfSauro)];
   for (const h of w.herbivores) {
     const herd = w.herds[h.herd];
     stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now, heard);
