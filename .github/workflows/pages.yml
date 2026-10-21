@@ -2,7 +2,7 @@ name: Deploy game to Pages
 
 on:
   push:
-    branches: [main, ccr-2a56f6ba-gpqicf]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
