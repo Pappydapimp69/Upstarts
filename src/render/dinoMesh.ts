@@ -13,6 +13,7 @@ export class DinoMesh {
   private phase = 0;
   private sprintBlend = 0;
   private headDown = 0;
+  private sniffUp = 0;
   private dead = 0;
 
   constructor(private readonly sp: Species) {
@@ -66,7 +67,7 @@ export class DinoMesh {
   }
 
   update(x: number, y: number, z: number, yaw: number, speed: number, accel: number, grade: number, dt: number,
-    feeding = false, alive = true): void {
+    feeding = false, alive = true, biteT = 9, sniffing = false): void {
     this.root.position.set(x, y, z);
     this.root.rotation.y = yaw;
 
@@ -92,6 +93,11 @@ export class DinoMesh {
     this.headDown = damp(this.headDown, feeding ? 1 : 0, 5, dt);
     const sip = feeding ? Math.max(0, Math.sin(performance.now() / 1000 * Math.PI * 2 / 2.3)) * 0.25 : 0;
     this.neck.rotation.x = (-0.35 * (1 - s) + 0.35 * s) * (1 - this.headDown) + (1.25 - sip) * this.headDown;
+    // Bite: a quick lunge of the neck down and forward. Sniff: head up into the air, short jerks.
+    const lunge = biteT < 0.35 ? Math.sin((biteT / 0.35) * Math.PI) : 0;
+    this.neck.rotation.x += lunge * 0.7;
+    this.sniffUp = damp(this.sniffUp, sniffing ? 1 : 0, 6, dt);
+    this.neck.rotation.x -= this.sniffUp * (0.35 + Math.max(0, Math.sin(performance.now() / 90)) * 0.06);
     // Dead: rolled onto its side.
     this.dead = damp(this.dead, alive ? 0 : 1, 3, dt);
     this.root.rotation.z = this.dead * Math.PI / 2;

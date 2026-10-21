@@ -15,6 +15,9 @@
       .bar b.low { background: #b0442e; }
       #prompt { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); font: 15px system-ui, sans-serif;
         color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.7); pointer-events: none; }
+      #scent { position: fixed; left: 50%; bottom: 96px; font: 30px system-ui, sans-serif; color: #fff;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.7); transform-origin: 50% 60%; pointer-events: none; }
+      #scent[hidden] { display: none; }
       #death { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 4px;
         font: 15px system-ui, sans-serif; color: #fff; background: rgba(20,10,5,0.45); pointer-events: none; }
       #death[hidden] { display: none; }
@@ -28,8 +31,9 @@
   <body>
     <div id="bars"></div>
     <div id="prompt"></div>
+    <div id="scent" hidden>▲</div>
     <div id="death" hidden></div>
-    <div id="help">WASD move · Shift sprint · G drink · E eat · drag to look · C camera behind · or a controller</div>
+    <div id="help">WASD move · Shift sprint · G drink/sniff · E eat/bite · drag to look · C camera behind · or a controller</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

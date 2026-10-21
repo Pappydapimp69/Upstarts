@@ -54,12 +54,12 @@ describe('drinking', () => {
     expect(w.player.needs.thirst).toBeGreaterThan(0.9);
   });
 
-  it('does nothing away from water', () => {
+  it('sniffs instead of drinking away from water', () => {
     const w = createWorld(1);
     w.player = createDino(HERRERASAURUS, -20, 20, 0);
     w.player.needs.thirst = 0.5;
     runFor(w, { ...idle, drink: true }, 3);
-    expect(w.player.act).toBe('none');
+    expect(w.player.act).toBe('sniff');
     expect(w.player.needs.thirst).toBeLessThan(0.5);
   });
 

@@ -9,14 +9,14 @@ export interface Command {
   moveX: number; // desired heading, world x (east)
   moveZ: number; // desired heading, world z; |(moveX, moveZ)| is stick strength 0..1
   sprint: number; // 0..1 trigger
-  drink?: boolean; // held
-  eat?: boolean; // held
+  drink?: boolean; // held: drinks in reach of water, sniffs the air otherwise
+  eat?: boolean; // held: bites live prey in front, eats a carcass otherwise
   respawn?: boolean; // pressed, only read while dead
 }
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
-export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat';
+export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'bite' | 'sniff';
 
 export interface Dino {
   species: Species;
@@ -33,12 +33,14 @@ export interface Dino {
   act: Act;
   alive: boolean;
   age: number; // s alive
+  biteT: number; // s since the last bite
+  sniff: { yaw: number; strength: number } | null; // strongest scent while sniffing
 }
 
 export function createDino(species: Species, x: number, z: number, yaw: number): Dino {
   return {
     species, x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, sniff: null,
   };
 }
 

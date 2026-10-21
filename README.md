@@ -17,8 +17,9 @@ Pushes deploy to GitHub Pages (`.github/workflows/pages.yml`).
 
 ## Play
 
-WASD move · Shift sprint · hold G drink · hold E eat · drag to look · C camera behind.
-Controller: left stick, RT sprint, hold B drink, hold X eat, A to hatch again.
+WASD move · Shift sprint · hold G drink (or sniff away from water) · hold E eat (or bite live prey)
+· drag to look · C camera behind.
+Controller: left stick, RT sprint, hold B drink/sniff, hold X eat/bite, A to hatch again.
 Add `?fast` to the URL to make hunger and thirst drain 20x faster.
 
 ## Layout

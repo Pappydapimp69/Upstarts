@@ -25,6 +25,7 @@ export class Hud {
   private readonly bars = new Map<string, HTMLElement>();
   private readonly prompt: HTMLElement;
   private readonly death: HTMLElement;
+  private readonly arrow: HTMLElement;
   private readonly records = loadRecords();
   private seenDeath: unknown = null;
 
@@ -38,9 +39,10 @@ export class Hud {
     }
     this.prompt = root.querySelector('#prompt')!;
     this.death = root.querySelector('#death')!;
+    this.arrow = root.querySelector('#scent')!;
   }
 
-  update(w: World, nearWater: boolean, nearFood: boolean): void {
+  update(w: World, nearWater: boolean, nearFood: boolean, nearPrey: boolean, camYaw: number): void {
     const d: Dino = w.player;
     const v = { health: d.needs.health, hunger: d.needs.hunger, thirst: d.needs.thirst, stamina: d.stamina };
     for (const [k, el] of this.bars) {
@@ -49,9 +51,18 @@ export class Hud {
       el.classList.toggle('low', f < 0.25);
     }
 
-    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating'
-      : nearWater ? 'Hold G / B to drink' : nearFood ? 'Hold E / X to eat' : '';
+    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'bite' ? 'Biting'
+      : d.act === 'sniff' ? (d.sniff ? (d.sniff.strength > 0.5 ? 'Strong scent' : 'Faint scent') : 'Nothing on the wind')
+      : nearPrey ? 'Hold E / X to bite' : nearWater ? 'Hold G / B to drink' : nearFood ? 'Hold E / X to eat'
+      : 'Hold G / B to sniff';
     this.prompt.textContent = d.alive ? hint : '';
+    // Sniffing: an arrow pointing the way the scent comes from, relative to the camera.
+    if (d.act === 'sniff' && d.sniff) {
+      this.arrow.hidden = false;
+      const rel = d.sniff.yaw - (camYaw + Math.PI);
+      this.arrow.style.transform = `translateX(-50%) rotate(${-rel}rad)`;
+      this.arrow.style.opacity = String(0.4 + 0.6 * Math.min(1, d.sniff.strength));
+    } else this.arrow.hidden = true;
 
     if (!d.alive && w.lastDeath && this.seenDeath !== w.lastDeath) {
       this.seenDeath = w.lastDeath;

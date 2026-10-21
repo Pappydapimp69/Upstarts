@@ -6,6 +6,7 @@ import { DinoMesh } from './render/dinoMesh';
 import { FollowCamera } from './render/camera';
 import { buildWater, CarcassMeshes } from './render/worldMeshes';
 import { Hud } from './render/hud';
+import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { initInput, readInput } from './input/input';
 
 // ?fast makes hunger and thirst drain 20x faster, to try the death loop quickly.
@@ -15,6 +16,8 @@ const view = new SceneView(document.body);
 view.scene.add(buildWater());
 const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
+const herbMeshes = new HerbivoreMeshes();
+view.scene.add(herbMeshes.group);
 
 let p = world.player;
 let dinoMesh = new DinoMesh(p.species);
@@ -28,7 +31,7 @@ let prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
 let last = performance.now();
 let acc = 0;
 
-function nearby(): { water: boolean; food: boolean } {
+function nearby(): { water: boolean; food: boolean; prey: boolean } {
   const r = p.species.reach;
   let water = false;
   for (let i = 0; i < 12 && !water; i++) {
@@ -36,7 +39,9 @@ function nearby(): { water: boolean; food: boolean } {
     water = waterDepthAt(p.x + Math.sin(a) * r, p.z + Math.cos(a) * r) > 0.05;
   }
   const food = world.carcasses.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < r + CARCASS.radius);
-  return { water, food };
+  const prey = world.herbivores.some((h) => Math.hypot(h.x - p.x, h.z - p.z) < p.species.snout + 1.4
+    && Math.abs(wrapAngle(Math.atan2(h.x - p.x, h.z - p.z) - p.yaw)) < 0.7);
+  return { water, food, prey };
 }
 
 function frame(now: number): void {
@@ -47,6 +52,7 @@ function frame(now: number): void {
   const cmd = cam.command(inp);
   while (acc >= TICK_DT) {
     prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
+    herbMeshes.beforeTick(world.herbivores);
     step(world, cmd);
     cmd.respawn = false; // a press acts once, not once per tick
     acc -= TICK_DT;
@@ -65,13 +71,14 @@ function frame(now: number): void {
   const yaw = prev.yaw + wrapAngle(p.yaw - prev.yaw) * a;
 
   const feeding = p.act === 'drink' || p.act === 'eat';
-  dinoMesh.update(x, y, z, yaw, p.speed, p.accel, p.grade, dt, feeding, p.alive);
+  dinoMesh.update(x, y, z, yaw, p.speed, p.accel, p.grade, dt, feeding, p.alive, p.biteT, p.act === 'sniff');
+  herbMeshes.update(world.herbivores, a, dt);
   carcassMeshes.sync(world.carcasses, heightAt);
   cam.update(inp, dt, { x, y, z, yaw, speed: p.speed });
   view.followSun(x, y, z);
   view.render();
   const near = nearby();
-  hud.update(world, near.water, near.food);
+  hud.update(world, near.water, near.food, near.prey, cam.yaw);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -51,6 +51,8 @@ export class CarcassMeshes {
         g = this.build();
         g.position.set(c.x, heightAt(c.x, c.z), c.z);
         g.rotation.y = c.yaw;
+        // Scale the greybox to the animal: an 80 kg Hyperodapedon is smaller than a 350 kg Herrerasaurus.
+        g.scale.setScalar(Math.cbrt(Math.max(c.meat0, 10) / 140));
         this.meshes.set(c.id, g);
         this.group.add(g);
       }
