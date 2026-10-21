@@ -278,7 +278,7 @@ export function step(w: World, cmd: Command): void {
           if (h.health <= 0) h.state = 'dead';
         } else {
           const s = prey.s;
-          const share = biteDamage(d.body.mass, SAUROSUCHUS.mass);
+          const share = biteDamage(d.body.mass, SAUROSUCHUS.mass, 1, SAUROSUCHUS.hide);
           s.health -= share;
           w.events.push({ kind: 'hit', who: 'player', x: s.x, y: groundY(s.x, s.z) + 0.8, z: s.z, level: 76 + 8 * share, share });
           w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });

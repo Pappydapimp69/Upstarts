@@ -2,6 +2,7 @@
 import type { Dino } from '../sim/dino';
 import type { World } from '../sim/world';
 import { stageOf } from '../sim/growth';
+import { maxHp } from '../sim/combat';
 import { onDevice, pressConfirm, state as inputState, type Device } from '../input/input';
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
@@ -108,7 +109,7 @@ export class Ui {
       el.parentElement!.classList.toggle('low', k !== 'growth' && v[k] < 0.25);
     }
     const txt: Record<string, string> = {
-      health: word(n.health, [[0.9, 'Healthy'], [0.6, 'Hurt'], [0.3, 'Badly hurt'], [0, 'Dying']]),
+      health: `${Math.ceil(n.health * maxHp(d.body.mass))}/${Math.round(maxHp(d.body.mass))} HP`,
       hunger: word(n.hunger, [[0.8, 'Fed'], [0.5, 'Peckish'], [0.2, 'Hungry'], [0, 'Starving']]),
       thirst: word(n.thirst, [[0.8, 'Watered'], [0.5, 'Thirsty'], [0.2, 'Parched'], [0, 'Dehydrated']]),
       stamina: word(d.stamina, [[0.8, 'Fresh'], [0.5, 'Winded'], [0.2, 'Tired'], [0, 'Spent']]),

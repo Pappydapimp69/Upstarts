@@ -24,6 +24,7 @@ export const SAUROSUCHUS = {
   biteCone: 0.6,
   biteEvery: 1.4, // s
   biteMult: 1.3, // heavy skull: bites harder than its mass alone gives
+  hide: 1.5, // osteoderms down the back: bites do two thirds of the damage
   sight: 50,
   smell: 0.12,
   stealth: 0.35, // multiplier on how far away prey can see it while it stalks (low and crouched)

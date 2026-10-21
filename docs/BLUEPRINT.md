@@ -435,6 +435,7 @@ time on art (M5).**
 | D12 | Survival stats: hunger, thirst, stamina, health; injuries later; no temperature in v1. | LOCKED |
 | D13 | After a death only records carry over (longest life, kills). No unlocks or skins. | LOCKED |
 | D14 | Non-dinosaur reptiles sleep at night; dinosaurs, the player included, stay active. | LOCKED |
+| D15 | Hit points come from the body: max HP scales with mass^(2/3) (size and weight), 100 HP for an adult Herrerasaurus; bite damage in HP scales the same way with the attacker, times bite strength, divided by the defender's armor. Bigger animals have more HP. | LOCKED |
 
 ---
 

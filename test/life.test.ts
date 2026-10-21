@@ -95,7 +95,7 @@ describe('herds', () => {
 });
 
 describe('hunting', () => {
-  it('three bites kill a Hyperodapedon and leave a carcass', () => {
+  it('two bites from an adult kill a Hyperodapedon and leave a carcass', () => {
     const w = oneHerd(60, -60);
     w.herbivores = [w.herbivores[0]];
     const h = w.herbivores[0];
@@ -116,7 +116,7 @@ describe('hunting', () => {
       }
     }
     expect(w.herbivores.length).toBe(0);
-    expect(bites).toBe(2); // the third, killing bite removes it
+    expect(bites).toBe(1); // the second, killing bite removes it
     expect(w.carcasses.some((c) => Math.abs(c.meat - HYPERODAPEDON.meat) < 1)).toBe(true);
   });
 

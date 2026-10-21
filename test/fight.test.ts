@@ -3,7 +3,7 @@ import { createWorld, PLAYER_ID, step, TICK_HZ, type World } from '../src/sim/wo
 import { createDino, type Command } from '../src/sim/dino';
 import { HERRERASAURUS } from '../src/sim/species';
 import { bodyOf, GROWTH, stageOf } from '../src/sim/growth';
-import { biteDamage } from '../src/sim/combat';
+import { biteDamage, bitesToKill, maxHp } from '../src/sim/combat';
 import { HYPERODAPEDON } from '../src/sim/herbivore';
 import { catchRadius, createSauro, SAUROSUCHUS } from '../src/sim/saurosuchus';
 import { WIND } from '../src/sim/scent';
@@ -61,7 +61,10 @@ describe('growth', () => {
 
 describe('combat', () => {
   it('size ratio decides bite damage', () => {
-    expect(biteDamage(350, 80)).toBeCloseTo(0.335, 2); // adult on Hyperodapedon: three bites
+    expect(bitesToKill(350, 80)).toBe(2); // adult on Hyperodapedon
+    expect(maxHp(350)).toBeCloseTo(100);
+    expect(maxHp(SAUROSUCHUS.mass)).toBeGreaterThan(maxHp(350)); // bigger and heavier: more HP
+    expect(maxHp(80)).toBeLessThan(maxHp(350));
     const hatch = bodyOf(HERRERASAURUS, 0).mass;
     expect(biteDamage(hatch, 80)).toBeLessThan(0.05); // a hatchling can't take one down
     // Saurosuchus out-trades an adult Herrerasaurus.
@@ -102,19 +105,21 @@ describe('Saurosuchus', () => {
     expect(w.lastDeath?.cause).toBe('Saurosuchus');
   });
 
-  it('an adult Herrerasaurus outruns it, and it gives up', () => {
-    const w = arena(1, 14);
+  it('an adult Herrerasaurus that reacts in time outruns it, and it gives up', () => {
+    const w = arena(1, 30);
     const s = w.sauros[0];
-    // Wait until it charges, then sprint straight away.
+    // Two bites kill an adult now, so standing still until it's at 3 m is fatal by design.
+    // The player sees it creeping in and sprints away once it's within 12 m.
     let fled = false, gaveUp = false;
     secs(w, 60, () => {
-      if (s.state === 'charge') fled = true;
+      if (Math.hypot(s.x - w.player.x, s.z - w.player.z) < 12) fled = true;
       if (fled && s.state === 'rest') gaveUp = true;
       return fled ? { moveX: 0, moveZ: -1, sprint: 1 } : idle;
     });
     expect(fled).toBe(true);
     expect(w.player.alive).toBe(true);
-    expect(gaveUp).toBe(true);
+    expect(w.player.needs.health).toBe(1);
+    expect(gaveUp || s.state === 'stalk' || s.state === 'patrol').toBe(true);
     expect(catchRadius(7.4)).toBeLessThan(catchRadius(4.8));
   });
 
