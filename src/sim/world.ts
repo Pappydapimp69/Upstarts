@@ -1,9 +1,10 @@
 // Game state and rules. No Three.js or DOM here: the sim must be able to run
 // in a Web Worker or on a server unchanged (blueprint D2, D7).
-import { createDino, IDLE, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
+import { createDino, footfall, IDLE, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
 import { NEEDS, needPace, stepNeeds } from './needs';
 import { browseAt, pushOutOfTrees } from './flora';
-import { groundAt, pushOutOfRocks, TIER } from './ground';
+import { groundAt, pushOutOfRocks, surfaceAt, TIER } from './ground';
+import { bodyScale } from './balance';
 import { heightAt, SPAWNS, TOO_DEEP, waterDepthAt } from './terrain';
 import { SPECIES, type SpeciesId } from './species';
 import { clamp, lerp, smooth, wrapAngle } from './math';
@@ -564,7 +565,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     d.biteT += dt;
     d.sniff = null;
     // Lying down or mid-jump, it can't drink, eat or bite.
-    const free = !d.resting && d.rest < 0.3 && !d.jump;
+    const free = !d.resting && d.rest < 0.3 && !d.jump && !(d.fall && d.fall.level !== 'slip');
     const wantEat = free && !!cmd.eat, wantDrink = free && !!cmd.drink;
     const prey = wantEat ? preyInReach(w, d, BITE.lead * (0.5 + d.body.size)) : null;
     if (wantDrink) {
@@ -640,7 +641,22 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     // Footfalls: stride from Alexander's relation, two feet per stride; a sprint slams (+10 dB noise rating).
     const v = d.speed, legL = d.body.leg;
     const stride = Math.max(0.8 * d.body.size, 2.3 * legL * Math.pow((v * v) / (9.81 * legL), 0.3));
+    const gait0 = d.gait;
     if (d.air <= 0) footfalls(w, d, slot.entity, d.x, d.z, d.body.mass, v, stride, 2, dt, isSprinting(d, cmd) ? SPRINT_DB : 0);
+    // Each footfall: does this foot hold? (sim/balance.ts; alternate feet, right on even counts.)
+    if (Math.floor(d.gait) !== Math.floor(gait0)) footfall(d, Math.floor(d.gait) % 2 === 0 ? 1 : -1, stride, isSprinting(d, cmd));
+    // The sounds of losing footing: the skid, the body hitting the ground and the growl that goes with it (owner:
+    // a fall growls), and claws scraping up an edge.
+    const B = bodyScale(d), mk = 10 * Math.log10(d.body.mass / 350), at = { x: d.x, y: groundY(d.x, d.z), z: d.z }, surface = surfaceAt(d.x, d.z);
+    if (d.fallStart) {
+      const L = d.fallStart.level;
+      w.events.push({ kind: 'skid', who: 'player', id: slot.entity, ...at, level: (L === 'slip' ? 68 : L === 'stumble' ? 72 : 75) + mk, dur: (L === 'slip' ? 0.22 : L === 'stumble' ? 0.38 : 0.55) * B.ts, mass: d.body.mass, surface });
+    }
+    if (d.fallThud) {
+      w.events.push({ kind: 'thud', who: 'player', id: slot.entity, ...at, level: 84 + 6 * Math.log10(B.mk * 10), mass: d.body.mass, surface });
+      w.events.push({ kind: 'call', who: 'player', call: 'growl', ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.3 * d.body.hip), level: callLevel('growl', d.body.mass) });
+    }
+    if (d.scrambled > 0) w.events.push({ kind: 'scramble', who: 'player', id: slot.entity, ...at, level: 68 + mk, mass: d.body.mass, surface });
     // Landing from a jump: both feet at once, louder the harder it comes down.
     if (d.jumpLanded > 0) w.events.push({ kind: 'step', who: 'player', id: slot.entity, x: d.x, y: heightAt(d.x, d.z), z: d.z, level: STEP_DB(d.body.mass, d.jumpLanded) + 6 });
     d.callT += dt;

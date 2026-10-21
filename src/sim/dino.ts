@@ -2,6 +2,7 @@ import { clamp, damp, lerp, smooth, wrapAngle } from './math';
 import { gradeAlong, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { groundAt, groundInfo, mudDepthAt, surfaceAt, TIER } from './ground';
 import { newCoat, soak, stepCoat, type Coat } from './coat';
+import { footCheck, startFall, stepFall, type Fall } from './balance';
 import { fullNeeds, type Needs } from './needs';
 import { bodyOf, type Body } from './growth';
 import { pushOutOfTrees } from './flora';
@@ -60,6 +61,9 @@ export interface Dino {
   snap: boolean; // a bite on its way: the jaws close BITE.snap s after the press, on whatever is there then
   scrambled: number; // the tick a leap came up short and it clawed up over the edge: how far short, m; else 0
   coat: Coat; // wet and mud up the body
+  fall: Fall | null; // a slip, stumble or trip in progress
+  fallThud: boolean; // the tick a trip's body hit the ground
+  fallStart: Fall | null; // the fall that started this tick, for its sound
 }
 
 // A leap (Dlist demo): a short crouch, then a ballistic arc, heavier on the way down.
@@ -86,7 +90,7 @@ export function createDino(species: Species, x: number, z: number, yaw: number, 
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: groundAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
     needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, egg: 0,
-    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(),
+    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null,
   };
 }
 
@@ -123,6 +127,24 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
         : sp.walk * mag;
     }
   }
+  // Mid-fall (demo): down, it can't move or steer; a slip barely checks it; a stumble halves its speed and its turning.
+  d.fallThud = false;
+  d.fallStart = null;
+  if (d.fall) {
+    const f = stepFall(d.fall, dt);
+    d.fallThud = f.thud;
+    if (f.done) d.fall = null;
+  }
+  if (d.fall) {
+    if (d.fall.down) {
+      target = 0;
+      steer = false;
+    } else if (d.fall.level === 'slip') target *= 0.9;
+    else {
+      target *= 0.5;
+      turnCap = Math.min(turnCap, 1);
+    }
+  }
 
   // Wading slows it, up to about half speed at hip depth.
   const depth = waterDepthAt(d.x, d.z);
@@ -152,15 +174,15 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   // Acceleration is capped by what the feet can carry (2.1 m/s^2 up to 5 m/s, 1.2 near 7); braking 4 m/s^2.
   const prev = d.speed;
   const up = lerp(2.1, 1.2, smooth(5, 7, d.speed));
-  if (d.jump?.ph !== 'air') d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - (d.alive ? 4 : 9) * dt);
+  if (d.jump?.ph !== 'air') d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - (d.alive && !d.fall?.down ? 4 : 9) * dt); // down, it skids to a stop
   d.accel = damp(d.accel, (d.speed - prev) / dt, 6, dt);
 
   const sprinting = isSprinting(d, cmd);
   // Rest: lie down while held and nearly still; stands back up when let go.
   if (d.resting) d.resting = !!cmd.rest && d.alive;
-  else if (cmd.rest && d.alive && !d.jump && !ov && d.speed < 0.6) d.resting = true;
+  else if (cmd.rest && d.alive && !d.jump && !d.fall && !ov && d.speed < 0.6) d.resting = true;
   d.rest = damp(d.rest, d.resting ? 1 : 0, d.resting ? 2.2 : 3.5, dt);
-  if (cmd.jump && d.alive && !d.jump && !ov && !d.resting && d.rest < 0.3) startJump(d);
+  if (cmd.jump && d.alive && !d.jump && !d.fall && !ov && !d.resting && d.rest < 0.3) startJump(d);
   stepJump(d, dt);
 
   if (d.alive) d.stamina = clamp(d.stamina + (sprinting ? STAMINA.sprint : d.jump ? 0 : d.rest > 0.8 ? STAMINA.rest : STAMINA.walk) * dt, 0, 1);
@@ -191,7 +213,34 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
       soak(d.coat, sp.hip, (wd > 0 ? wd + (0.3 + 0.3 * imp) * k : md + (0.25 + 0.25 * imp) * k), surfaceAt(d.x, d.z) === 'mud');
     }
     stepCoat(d.coat, sp.hip, wd, md, d.rest, d.speed > 0.3 && !d.jump, dt);
+    // A bad landing on a rock, or one foot up and one down, gets the same stability check as a step (demo jumpLand).
+    // A scramble comes in slow: the edge is the risk, not the impact.
+    if (d.jumpLanded > 0 && !d.fall) {
+      const imp = clamp(d.jumpLanded / 5, 0, 1.3), sx = Math.cos(d.yaw) * 0.13 * sp.size, sz = -Math.sin(d.yaw) * 0.13 * sp.size;
+      const gL = groundAt(d.x - sx, d.z - sz), gR = groundAt(d.x + sx, d.z + sz), uneven = Math.abs(gL - gR) / (TIER.step * sp.hip);
+      for (const side of [1, -1]) {
+        const fx = d.x + side * sx, fz = d.z + side * sz;
+        const c = footCheck(d, fx, fz, fx, fz, 0, d.scrambled ? imp * 0.5 : imp + uneven * 0.6, false);
+        if (c && c.outcome !== 'ok') {
+          d.fall = d.fallStart = startFall(d, c, side);
+          break;
+        }
+      }
+    }
   }
+}
+
+// A footfall, from the world's gait counter: where this foot lands and whether it holds (sim/balance.ts).
+// side +1 right, -1 left; stride: m per full cycle (two footfalls).
+export function footfall(d: Dino, side: number, stride: number, sprinting: boolean): void {
+  if (!d.alive || d.fall || d.jump || d.air > 0) return;
+  const v = d.speed, hip = d.body.hip, Fr = (v * v) / (9.81 * hip);
+  const duty = 0.5 + 0.14 * Math.tanh((0.5 - Fr) / 0.25);
+  const along = 0.5 * stride * duty; // it lands this far ahead of the hip
+  const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw), rx = Math.cos(d.yaw), rz = -Math.sin(d.yaw), lat = 0.13 * d.body.size * side;
+  const x = d.x + fx * along + rx * lat, z = d.z + fz * along + rz * lat;
+  const c = footCheck(d, x, z, x - fx * stride, z - fz * stride, along, 0, sprinting);
+  if (c && c.outcome !== 'ok') d.fall = d.fallStart = startFall(d, c, side);
 }
 
 // Rocks, logs and ledges (demo: "Ground the movement stands on", "Jumps and ledges"), all against this animal's

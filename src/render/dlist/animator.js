@@ -159,7 +159,39 @@ export class HerreraAnimator {
     D.lie = s.alive ? 0 : Math.min(1, D.lie + dt / 0.45);
     if (D.lie >= 1 && lie0 < 1) this.onSound?.('thud', V(s.x, rootG, s.z));
     const lie = s.alive ? 0 : D.lie * D.lie;
-    const fallRoll = -D.side * 1.35 * lie, fallDrop = 0.86 * lie, fallShift = D.side * 0.72 * lie;
+    let fallRoll = -D.side * 1.35 * lie, fallDrop = 0.86 * lie, fallShift = D.side * 0.72 * lie, fallPitch = 0, flail = 0, kick = 0, fe = 0;
+
+    // ---- falls and staggers (the demo's, driven by the sim's fall: s.fall, with s.bodyK = { ts, mk, agile }) ----
+    const F = s.alive ? s.fall : null, BK = s.bodyK || { ts: 1, mk: 1, agile: 1 };
+    if (F && F.down) {
+      // Topple onto its side (accelerating like a falling body), lie there kicking, then roll back and push up.
+      const t = F.t, t1 = F.tT, t2 = t1 + F.tL;
+      const topple = t < t1 ? (t / t1) ** 2 : 1, rise = t < t2 ? 0 : smooth(0, 1, (t - t2) / F.tR);
+      const bounce = t > t1 && t < t1 + 0.35 ? Math.sin(Math.PI * (t - t1) / 0.35) * 0.12 / BK.mk : 0; // a light body bounces more
+      fe = topple * (1 - rise);
+      fallRoll = -F.side * (1.35 * fe - bounce * (1 - rise));
+      fallDrop = 0.86 * fe - 0.05 * bounce + 0.06 * Math.sin(Math.PI * rise) * (rise < 0.5 ? 1 : -0.5); // a push-up dip as it rises
+      fallShift = F.side * 0.72 * fe;
+      fallPitch = (F.kind === 'trip' ? 0.28 : 0.08) * Math.sin(Math.PI * Math.min(1, t / t1)) * (1 - rise) + 0.12 * Math.sin(Math.PI * rise);
+      flail = (0.9 * smooth(0, t1 * 0.6, t) * (1 - smooth(t1 * 0.7, t1 * 1.2, t)) + 0.5 * Math.sin(Math.PI * rise)) * BK.agile;
+      kick = smooth(t1, t1 + 0.15, t) * (1 - smooth(t2 + F.tR * 0.1, t2 + F.tR * 0.45, t)); // legs paddle while down, scrabble as it rises
+    } else if (F && F.level === 'slip') {
+      // The foot skids out a little, the body dips and twitches, and it carries on.
+      const e = smooth(0, 0.05, F.t) * (1 - smooth(0.1, F.dur, F.t));
+      flail = 0.45 * e * BK.agile;
+      fallDrop = 0.05 * e; fallPitch = 0.04 * e; fallRoll = 0.08 * F.side * e; fallShift = 0.05 * F.side * e;
+    } else if (F) {
+      // A big lurch: knees buckle, the body pitches and rolls toward the bad foot and slides sideways, the head jerks
+      // up, arms and tail flail to catch the balance.
+      const e = smooth(0, 0.1, F.t) * (1 - smooth(F.dur * 0.35, F.dur, F.t)), sv = F.sev;
+      flail = e * sv * 1.25 * BK.agile;
+      fallDrop = 0.16 * e * Math.min(sv, 1.2);
+      fallPitch = (F.kind === 'trip' ? 0.3 : 0.14) * e * sv * (1 - 0.6 * smooth(F.dur * 0.25, F.dur * 0.55, F.t));
+      fallRoll = (F.kind === 'trip' ? 0.12 : 0.24) * F.side * e * sv;
+      fallShift = (F.kind === 'trip' ? 0.05 : 0.14) * F.side * e * sv;
+    }
+    const fl = flail * Math.sin(D.time * 17 / BK.ts), fl2 = flail * Math.sin(D.time * 12.5 / BK.ts + 1);
+    const sideK = F && F.down ? F.side : D.side, lieK = Math.max(lie, fe);
 
     // ---- actions ----
     let jawOpen = 0, lunge = 0, flex = 0;
@@ -235,7 +267,7 @@ export class HerreraAnimator {
     dino.rig.scale.setScalar(sz);
     const hd = D.hd, dip = D.dip * D.hd;
     // Walk: trunk a little nose-up. Sprint: trunk level and leaned forward, legs more bent.
-    const pelvisPitch = -slope * 0.75 + D.pitchF + lerp(-0.03, 0.09, run) + hd * 0.22 + dip * 0.1 + lunge * 0.05;
+    const pelvisPitch = -slope * 0.75 + D.pitchF + lerp(-0.03, 0.09, run) + hd * 0.22 + dip * 0.1 + lunge * 0.05 + fallPitch;
     // Lying down to rest, crouching to jump, and the squash of a landing.
     const rest = s.rest || 0, crouch = s.crouch || 0;
     D.land = Math.max(0, (D.land || 0) - dt * 4);
@@ -247,10 +279,10 @@ export class HerreraAnimator {
     B.chest.rotation.set(0.008 * Math.sin(D.time * 1.6), 0, 0);
     const look = (1 - mf) * 0.14 * Math.sin(D.time * 0.37) * Math.sin(D.time * 0.23 + 1) * (D.act === 'none' ? 1 : 0);
     // Head counterbalances body roll on uneven footing (toward the high side).
-    const nYaw = s.yawRate * 0.05 + D.hyaw + D.roll * 0.8 + biteYaw - hurtSide * 0.45 * hurtE; // flinches away from the bite
+    const nYaw = s.yawRate * 0.05 + D.hyaw + D.roll * 0.8 + biteYaw - hurtSide * 0.45 * hurtE + fl * 0.3; // flinches away from the bite
     // Walk: relaxed S-curve neck, head high. Sprint: neck straight out and low, head in line with it.
-    B.neck1.rotation.set(lerp(-0.14, 0.32, run) * (1 - hd) + hd * 0.62 + dip * 0.35 - D.hu * 0.22 - D.tilt * 0.04 + lunge * 0.1 - 0.35 * lie, nYaw * 0.25, 0.55 * D.side * lie);
-    B.neck2.rotation.set(lerp(0.04, 0.17, run) * (1 - hd) + hd * 0.3 + dip * 0.2 - D.hu * 0.14 - D.tilt * 0.12 + lunge * 0.08, nYaw * 0.35 + look, 0.4 * D.side * lie);
+    B.neck1.rotation.set(lerp(-0.14, 0.32, run) * (1 - hd) + hd * 0.62 + dip * 0.35 - D.hu * 0.22 - D.tilt * 0.04 + lunge * 0.1 - 0.35 * lieK - fallPitch * 0.8, nYaw * 0.25, 0.55 * sideK * lieK);
+    B.neck2.rotation.set(lerp(0.04, 0.17, run) * (1 - hd) + hd * 0.3 + dip * 0.2 - D.hu * 0.14 - D.tilt * 0.12 + lunge * 0.08 + fl * 0.1, nYaw * 0.35 + look, 0.4 * sideK * lieK);
     B.neck3.rotation.set(lerp(0.24, 0.05, run) * (1 - hd) + hd * 0.02 - D.hu * 0.06 - D.tilt * 0.22 + lunge * 0.04, nYaw * 0.25 + look * 0.6, 0);
     B.head.rotation.set(lerp(-0.08, -0.56, run) * (1 - hd) + slope * 0.35 + hd * 0.1 - D.hu * 0.22 - D.tilt * 0.45 + lunge * 0.05 - bob * 1.5 - nose * 0.05 - D.pitchF * 0.6, nYaw * 0.15, 0);
     B.jaw.rotation.set(jawOpen, 0, 0);
@@ -264,18 +296,19 @@ export class HerreraAnimator {
     if (sgn && sgn !== D.tailTurnSign) D.tailTurnYaw = s.yaw;
     D.tailTurnSign = sgn;
     const th = sgn ? Math.min(hold, Math.abs(wrapAngle(s.yaw - D.tailTurnYaw))) : hold;
-    const cmd = -Math.sign(s.yawRate) * th - D.roll * 0.8 - D.side * 0.35 * lie;
+    const cmd = -Math.sign(s.yawRate) * th - D.roll * 0.8 - sideK * 0.35 * lieK + flail * 0.8 * Math.sin(D.time * 11) * (F && F.down ? 0.3 : 1);
     const w = 2 * Math.PI * 3;
     D.tailYawV += (w * w * (cmd - D.tailYaw) - 2 * w * D.tailYawV) * dt;
     D.tailYaw += D.tailYawV * dt;
     const wag = 0.07 * Math.sin(ph + 1.3) * mf * (1 - 0.5 * run) + 0.04 * Math.sin(D.time * 0.8) * (1 - mf);
     // Walk: slight droop. Sprint: held straight out.
-    const tailPitch = lerp(-0.02, 0.03, run) + bob * 0.6 - lie * 0.06 + 0.12 * rest;
+    const tailPitch = lerp(-0.02, 0.03, run) + bob * 0.6 - lieK * 0.06 + 0.12 * rest + fl2 * 0.15;
     dino.tails.forEach((t, k) => t.rotation.set(tailPitch * (1 + k * 0.1) + (k === 0 ? slope * 0.5 - D.pitchF * 0.5 - hd * 0.12 : 0), TAIL_W[k] * (D.tailYaw + wag), 0));
     for (const S of ['L', 'R']) {
       const sgnA = S === 'L' ? 1 : -1;
-      B['upper' + S].rotation.set(0.12 * Math.sin(ph + (sgnA > 0 ? 0 : Math.PI)) * mf + lunge * 0.15 - lie * 0.4, 0, 0);
-      B['fore' + S].rotation.set(-0.15, 0, 0);
+      // Arms flail to catch the balance in a stumble or a fall.
+      B['upper' + S].rotation.set(0.12 * Math.sin(ph + (sgnA > 0 ? 0 : Math.PI)) * mf + lunge * 0.15 - lieK * 0.4 + 0.6 * (sgnA > 0 ? fl : fl2), 0.4 * flail * sgnA, 0);
+      B['fore' + S].rotation.set(-0.15 - 0.5 * flail, 0, 0);
       B['hand' + S].rotation.set(0.1 * Math.sin(D.time * 1.1 + sgnA), 0, 0);
     }
     dino.rig.updateMatrixWorld(true);
@@ -284,11 +317,16 @@ export class HerreraAnimator {
     const pelvisQ = B.pelvis.getWorldQuaternion(new THREE.Quaternion());
     for (const L of legs) {
       const H = L.thigh.getWorldPosition(V());
-      const F = L.footPos.clone();
+      const Fp = L.footPos.clone();
       if (!s.alive) {
         // On its side the feet leave the ground and hang below the hip in the body's own frame.
         const tgt = B.pelvis.localToWorld(V(L.sx * 0.2, -0.82, 0.18));
-        F.lerp(tgt, smooth(0, 0.6, D.lie));
+        Fp.lerp(tgt, smooth(0, 0.6, D.lie));
+      } else if (fe > 0.01) {
+        // Down after a trip: the feet leave the ground and paddle, the upper leg kicking wider.
+        const li = legs.indexOf(L), wv = Math.sin(D.time * 9 / BK.ts + li * 2.6), up = sideK * L.sx > 0 ? 1 : 0;
+        const tgt = B.pelvis.localToWorld(V(L.sx * (0.2 + 0.25 * up * kick * (0.5 + 0.5 * wv)), -0.82 + 0.18 * kick * wv, 0.18 + 0.3 * kick * wv));
+        Fp.lerp(tgt, smooth(0, 0.6, fe));
       }
       const swing = (L.liftS || 0) > 0;
       // Heel lifts through stance toward toe-off; more if the hip would otherwise be out of reach (E3).
@@ -297,7 +335,7 @@ export class HerreraAnimator {
       let metaDir, A;
       for (let it = 0; it < 8; it++) {
         metaDir = L.metaRest.clone().applyAxisAngle(AX, lift).applyAxisAngle(UP, s.yaw);
-        A = F.clone().addScaledVector(metaDir, -L.metaLen * sz);
+        A = Fp.clone().addScaledVector(metaDir, -L.metaLen * sz);
         if (A.distanceTo(H) <= reach) break;
         lift += 0.14;
       }
@@ -308,7 +346,7 @@ export class HerreraAnimator {
       const shinDir = A.clone().sub(K).normalize();
       q = aimBone(L.shin, q, L.shinRest, shinDir);
       A = K.clone().addScaledVector(shinDir, L.shinLen * sz);
-      q = aimBone(L.meta, q, L.metaRest, F.clone().sub(A));
+      q = aimBone(L.meta, q, L.metaRest, Fp.clone().sub(A));
       const curl = swing ? Math.sin(Math.PI * L.liftS) * 0.6 : 0;
       const toeDir = fwd.clone().multiplyScalar(Math.cos(curl)).add(V(0, -Math.sin(curl) - 0.06, 0));
       aimBone(L.toe, q, L.toeRest, toeDir);

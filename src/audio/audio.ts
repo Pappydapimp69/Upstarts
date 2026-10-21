@@ -17,6 +17,8 @@ export type Surface = 'packedDirt' | 'sand' | 'sandstone' | 'wood' | 'mud' | 'wa
 export const STEP_DB = (mass: number, speed: number): number => 62 + 10 * Math.log10(mass / 350) + 15 * Math.log10(Math.max(speed, 0.3) / 3.4);
 
 const audioRng = rng(0xa0d10);
+// The sim's surfaces as the engine's footstep materials.
+const ENGINE_SURFACE: Record<NonNullable<SoundEvent['surface']>, Surface> = { water: 'water', mud: 'mud', rock: 'sandstone', log: 'wood', dirt: 'packedDirt' };
 const vary = (db: number): number => 10 ** (((audioRng() * 2 - 1) * db) / 20);
 
 export class AudioLayer {
@@ -175,6 +177,29 @@ export class AudioLayer {
         const src = ev.who === 'saurosuchus' ? S.sauroJaw : S.jaw;
         this.at(src, ev);
         src.strike(12 * vary(1), ev.who === 'saurosuchus' ? 0.6 : 0.85);
+        break;
+      }
+      // A skid is stick-slip: a dense run of tiny contacts as the foot drags (Dlist demo). Grit on dirt, claw scrapes on
+      // rock, suction in mud, bubbles in water, slowing and fading as it catches.
+      case 'skid': {
+        this.at(S.feet, ev);
+        const dur = ev.dur ?? 0.3, n = Math.max(6, Math.round(dur * 55)), surface = ENGINE_SURFACE[ev.surface ?? 'dirt'];
+        for (let k = 0; k < n; k++) {
+          const u = k / n;
+          S.feet.step({ mass: (ev.mass ?? 350) * 0.06, speed: 0.3 + 0.5 * (1 - u), surface, claws: true, gain: 0.5 * (1 - u) ** 0.6 * (0.6 + 0.4 * audioRng()), delay: u * dur + 0.006 * audioRng() });
+        }
+        break;
+      }
+      // The body hitting the ground in a fall: one heavy, soft contact.
+      case 'thud':
+        this.at(S.feet, ev);
+        S.feet.step({ mass: (ev.mass ?? 350) * 3, speed: 4, surface: ENGINE_SURFACE[ev.surface ?? 'dirt'], claws: false, gain: 1.4 });
+        break;
+      // Claws scraping up an edge after a short leap.
+      case 'scramble': {
+        this.at(S.feet, ev);
+        const surface = ev.surface === 'dirt' || !ev.surface ? 'sandstone' : ENGINE_SURFACE[ev.surface];
+        for (let k = 0; k < 3; k++) S.feet.step({ mass: (ev.mass ?? 350) * 0.6, speed: 2, surface, claws: true, gain: 0.6, delay: 0.07 * k });
         break;
       }
       // A bite landing: a wet blow (suction and a soft heavy contact) at the bite point.

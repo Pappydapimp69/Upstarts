@@ -26,6 +26,7 @@ import { setPlaying, setRoarLabel, state as inputState } from './input/input';
 import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
+import { bodyScale } from './sim/balance';
 import { Marker } from './render/marker';
 import { BLOOD, Drops } from './render/blood';
 import { CoatView, coatText } from './render/coatView';
@@ -210,6 +211,19 @@ function frame(now: number): void {
     }
     for (const ev of world.events) {
       audio.play(ev, tract());
+      // Losing footing: a jolt for a stumble, a heavy one when the body hits the ground (demo startFall, thud).
+      const touch = inputState.device === 'touch';
+      if (ev.kind === 'skid' && ev.who === 'player' && p.fall) {
+        const L = p.fall.level, mk = bodyScale(p).mk;
+        rumble.hit(L === 'slip' ? 0.3 : 0.5, Math.min(1, (L === 'trip' ? 0.6 : L === 'slip' ? 0.15 : 0.5) * mk), L === 'trip' ? 260 : L === 'slip' ? 90 : 180, performance.now(), touch);
+        if (L !== 'slip') fx.jolt = Math.max(fx.jolt, L === 'trip' ? 0.6 : 0.4 + 0.5 * Math.min(1, p.fall.sev - 0.5));
+      }
+      if (ev.kind === 'thud' && ev.who === 'player') {
+        const mk = bodyScale(p).mk;
+        rumble.hit(0.6, Math.min(1, 0.7 * mk), 240, performance.now(), touch);
+        fx.jolt = Math.max(fx.jolt, 0.7 * mk);
+      }
+      if (ev.kind === 'scramble' && ev.who === 'player') rumble.hit(0.3, 0.35, 120, performance.now(), touch);
       if (ev.kind === 'bite' && ev.who === 'player') {
         fx.biteHit = false;
         if (ev.miss) ui.flash('Missed');
@@ -265,7 +279,7 @@ function frame(now: number): void {
   fx.hold -= dt;
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
     biteT: held ? fx.heldBiteT : p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
-    biteHit: fx.biteHit, hurtT: fx.hurtT, hurtSide: fx.hurtSide, hurtK: fx.hurtK,
+    biteHit: fx.biteHit, hurtT: fx.hurtT, hurtSide: fx.hurtSide, hurtK: fx.hurtK, fall: p.fall, bodyK: bodyScale(p),
     air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, held ? 0 : dt);
   blood.update(dt);
   coatView.update(p, herrera, dt);

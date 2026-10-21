@@ -177,6 +177,7 @@ export class Ui {
     for (const [k, el] of this.vals) el.textContent = txt[k];
     const sp = d.speed;
     this.el('pace').textContent = !d.alive ? 'Dead' : d.egg > 0 ? 'Inside the egg'
+      : d.fall ? (d.fall.down ? (d.fall.t < d.fall.tT + d.fall.tL ? 'Down' : 'Getting back up') : d.fall.level === 'slip' ? 'Slipped' : 'Stumbling')
       : d.jump ? (d.jump.ph === 'crouch' ? 'Crouching to jump' : 'Airborne')
       : d.resting ? (d.stamina < 0.995 ? 'Lying down, resting' : 'Lying down, rested') : d.rest > 0.05 ? 'Getting up'
       : sp < 0.15 ? 'Standing' : `${sp < 0.68 * d.body.sprintMax ? (sp < 1.6 * d.body.size ** 0.5 ? 'Walking' : 'Running') : 'Sprinting'} · ${sp.toFixed(1)} m/s`;
