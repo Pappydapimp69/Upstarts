@@ -1,15 +1,17 @@
 import { createWorld, hatchAs, step, TICK_DT, CARCASS } from './sim/world';
 import { browseAt } from './sim/flora';
-import { lerp, wrapAngle } from './sim/math';
+import { lerp, smooth, wrapAngle } from './sim/math';
 import { heightAt, waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
+import { fernCut } from './render/dlist/env.js';
 import { isSprinting, type Command } from './sim/dino';
 import { FollowCamera } from './render/camera';
 import { CarcassMeshes } from './render/worldMeshes';
 import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { SmallMeshes } from './render/smallMesh';
+import { visibleFraction } from './render/visibility';
 import { exposed, SMALL } from './sim/smallprey';
 import { SauroMeshes } from './render/sauroMesh';
 import { FootfallRumble } from './render/rumble';
@@ -209,6 +211,12 @@ function frame(now: number): void {
     return { ax: s.x + fx * 3, ay: gy, az: s.z + fz * 3, bx: s.x - fx * 2.5, by: gy, bz: s.z - fz * 2.5, r: 1.3 };
   });
   cam.update(inp, dt, { x, y, z, yaw, speed: p.speed }, p.body.hip / 1.15, p.alive && p.hitT < 0.25 ? 1 - p.hitT / 0.25 : 0, blockers);
+  // Ferns thin out between the camera and the player, and round a small player.
+  fernCut.uCutA.value.copy(cam.camera.position);
+  fernCut.uCutB.value.set(x, y + 0.6 * p.body.hip, z);
+  fernCut.uCutR.value = Math.max(0.5, 0.6 * p.body.hip);
+  fernCut.uCutDisc.value = Math.max(1, 1.5 * p.species.length * p.body.size);
+  fernCut.uCutDiscK.value = p.alive ? 0.85 * (1 - smooth(0.5, 1, p.body.hip)) : 0;
   view.followSun(x, y, z);
   view.render(dt);
   const near = nearby();
@@ -224,4 +232,5 @@ function frame(now: number): void {
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.
-(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, smallMeshes, herrera, view, audio };
+(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, smallMeshes, herrera, view, audio, fernCut,
+  visible: () => visibleFraction(view.renderer, view.scene, view.camera, herrera.root) };

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, damp, smooth, wrapAngle } from '../sim/math';
+import { clamp, damp, lerp, smooth, wrapAngle } from '../sim/math';
 import { heightAt } from '../sim/terrain';
 import type { Command } from '../sim/dino';
 import type { RawInput } from '../input/input';
@@ -97,7 +97,10 @@ export class FollowCamera {
         break;
       }
     }
-    c.position.y = Math.max(c.position.y, heightAt(c.position.x, c.position.z) + 0.45 * Math.max(size, 0.4));
+    // Eye floor: never down at fern height for a small animal (ZaneGPT review, Q3): 1.1 m up below a 0.5 m hip.
+    const hip = size * 1.15;
+    const floor = lerp(1.1, 0.45 * Math.max(size, 0.4), smooth(0.5, 0.7, hip));
+    c.position.y = Math.max(c.position.y, heightAt(c.position.x, c.position.z) + floor);
     // A jolt when bitten (skipped for reduced motion).
     if (jolt > 0 && !matchMedia('(prefers-reduced-motion: reduce)').matches) c.position.y -= jolt * 0.25;
     c.lookAt(this.target.x, this.target.y + 0.2, this.target.z);

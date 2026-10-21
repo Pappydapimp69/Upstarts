@@ -221,9 +221,47 @@ function fernGeometry(rand, fronds, lenLo, lenHi, cA, cB, tiltLo = 0.6, droop = 
   g.computeVertexNormals();
   return g;
 }
-function addWind(mat, strength, key) {
+// Fern cutout (ZaneGPT review, Q3): a small animal in fern cover is hidden from its own camera. Ferns
+// dither away inside a capsule from the camera to the player, and inside a disc round a small player, so
+// at least most of the body stays visible. Updated per frame by the client; strength 0 turns it off.
+export const fernCut = {
+  uCutA: { value: V(0, -100, 0) }, // camera
+  uCutB: { value: V(0, -100, 0) }, // player's body centre
+  uCutR: { value: 0.5 }, // capsule radius, m
+  uCutDisc: { value: 1 }, // disc radius round the player, m
+  uCutDiscK: { value: 0 }, // how much of the disc cuts, 0..1 (only small animals)
+};
+const CUT_FRAG = `
+  {
+    vec3 ab = uCutB - uCutA;
+    float t = clamp(dot(vCutW - uCutA, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+    float dc = length(vCutW - (uCutA + ab * t));
+    float k = (1.0 - smoothstep(uCutR * 0.5, uCutR, dc)) * step(0.05, t) * step(t, 0.97);
+    float dd = length(vCutW.xz - uCutB.xz);
+    k = max(k, uCutDiscK * (1.0 - smoothstep(uCutDisc * 0.6, uCutDisc, dd)));
+    vec2 q = floor(gl_FragCoord.xy); // 4x4 ordered dither
+    vec2 h = floor(q * 0.5);
+    float b4 = 0.25 * fract(dot(h, vec2(0.5, h.y * 0.75))) + fract(dot(q, vec2(0.5, q.y * 0.75)));
+    if (k > b4 + 0.03) discard;
+  }
+`;
+
+function addWind(mat, strength, key, cut = false) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uTime;
+    if (cut) {
+      Object.assign(sh.uniforms, fernCut);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCutW;')
+        .replace('#include <project_vertex>', `vec4 cutP = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            cutP = instanceMatrix * cutP;
+          #endif
+          vCutW = (modelMatrix * cutP).xyz;
+          #include <project_vertex>`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>',
+        '#include <common>\nvarying vec3 vCutW;\nuniform vec3 uCutA;\nuniform vec3 uCutB;\nuniform float uCutR;\nuniform float uCutDisc;\nuniform float uCutDiscK;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>' + CUT_FRAG);
+    }
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         #ifdef USE_INSTANCING
@@ -261,7 +299,7 @@ export function buildPlants(scene) {
   const fernA = fernGeometry(rng(11), 9, 0.8, 1.25, new THREE.Color('#3b5424'), new THREE.Color('#78893f'));
   const fernB = fernGeometry(rng(12), 7, 0.6, 1.0, new THREE.Color('#465a26'), new THREE.Color('#8a8a45'), 0.8, 0.8, 0.2);
   const fernMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, side: THREE.DoubleSide, envMapIntensity: 0.5 });
-  addWind(fernMat, 0.045, 'fern');
+  addWind(fernMat, 0.045, 'fern', true);
   const la = [], lb = [];
   for (let i = 0; i < 2400 && la.length + lb.length < 1300; i++) {
     const [x, z] = ringPoint(3, 80);
