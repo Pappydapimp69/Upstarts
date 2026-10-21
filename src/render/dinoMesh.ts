@@ -67,13 +67,17 @@ export class DinoMesh {
   }
 
   update(x: number, y: number, z: number, yaw: number, speed: number, accel: number, grade: number, dt: number,
-    feeding = false, alive = true, biteT = 9, sniffing = false): void {
+    feeding = false, alive = true, biteT = 9, sniffing = false, size = 1): void {
     this.root.position.set(x, y, z);
     this.root.rotation.y = yaw;
+    this.root.scale.setScalar(size);
+    // Dead: its body is a carcass in the world now; hide the live model once it has fallen.
+    this.root.visible = alive || this.dead < 0.95;
 
     // Stride from Alexander's relation (dlist/E3); one phase cycle per stride.
     const v = Math.max(speed, 0.01);
-    const stride = 2.3 * this.sp.leg * Math.pow((v * v) / (9.81 * this.sp.leg), 0.3);
+    const leg = this.sp.leg * size;
+    const stride = 2.3 * leg * Math.pow((v * v) / (9.81 * leg), 0.3);
     this.phase = (this.phase + (speed / stride) * dt) % 1;
     const moving = smooth(0.05, 0.6, speed);
     const swing = 0.55 * moving * (0.6 + 0.4 * smooth(2, 7, speed));
@@ -84,7 +88,7 @@ export class DinoMesh {
     });
 
     // Walk-to-sprint posture (blended 2.4 to 6.6 m/s): trunk leans forward, neck levels, tail lifts.
-    this.sprintBlend = damp(this.sprintBlend, smooth(2.4, 6.6, speed), 4, dt);
+    this.sprintBlend = damp(this.sprintBlend, smooth(2.4, 6.6, speed / Math.sqrt(size)), 4, dt);
     const s = this.sprintBlend;
     const bob = Math.abs(Math.sin(this.phase * Math.PI * 2)) * 0.04 * moving;
     this.body.position.y = this.sp.hip - 0.19 * s + bob;
@@ -103,7 +107,7 @@ export class DinoMesh {
     this.root.rotation.z = this.dead * Math.PI / 2;
     // Rolling 90° about the long axis swings the hip-high body out sideways to ground level;
     // lift it by the trunk's half-width so it lies on the ground, not in it.
-    this.root.position.y = y + this.dead * 0.38;
+    this.root.position.y = y + this.dead * 0.38 * size;
     this.tail.rotation.x = 0.24 * (1 - s) - 0.12 * s;
   }
 }

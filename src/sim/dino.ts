@@ -1,6 +1,7 @@
 import { clamp, damp, lerp, smooth, wrapAngle } from './math';
 import { gradeAlong, heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { fullNeeds, type Needs } from './needs';
+import { bodyOf, type Body } from './growth';
 import type { Species } from './species';
 
 // What a player (or AI, or remote client) asks for this tick. World-space, so the
@@ -20,6 +21,8 @@ export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'bite' | 'snif
 
 export interface Dino {
   species: Species;
+  growth: number; // 0 hatchling .. 1 adult
+  body: Body; // species numbers at the current growth
   x: number;
   y: number;
   z: number;
@@ -34,13 +37,14 @@ export interface Dino {
   alive: boolean;
   age: number; // s alive
   biteT: number; // s since the last bite
+  hitT: number; // s since it was last bitten
   sniff: { yaw: number; strength: number } | null; // strongest scent while sniffing
 }
 
-export function createDino(species: Species, x: number, z: number, yaw: number): Dino {
+export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
-    species, x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, sniff: null,
+    species, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, sniff: null,
   };
 }
 
@@ -55,7 +59,7 @@ export interface Override {
 
 // Movement controller ported from the Dlist demo (gait tuning lessons dlist/E2-E6).
 export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void {
-  const sp = d.species;
+  const sp = d.body;
   let target = 0, desiredYaw = d.yaw, steer = false, turnCap = 9;
   if (!d.alive) {
     steer = false;
@@ -99,7 +103,7 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - (d.alive ? 4 : 9) * dt);
   d.accel = damp(d.accel, (d.speed - prev) / dt, 6, dt);
 
-  const sprinting = d.speed > 5 && cmd.sprint > 0.25;
+  const sprinting = isSprinting(d, cmd);
   if (d.alive) d.stamina = clamp(d.stamina + (sprinting ? -0.02 : 0.11) * dt, 0, 1);
 
   const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw);
@@ -122,4 +126,5 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   d.y = heightAt(nx, nz);
 }
 
-export const isSprinting = (d: Dino, cmd: Command): boolean => d.speed > 5 && cmd.sprint > 0.25;
+// Above about two thirds of top speed (5 m/s for an adult) with the trigger held.
+export const isSprinting = (d: Dino, cmd: Command): boolean => d.speed > 0.68 * d.body.sprintMax && cmd.sprint > 0.25;

@@ -13,6 +13,10 @@
       .bar i { height: 8px; background: rgba(0,0,0,0.15); border-radius: 4px; overflow: hidden; }
       .bar b { display: block; height: 100%; background: #5a7a3a; transition: width 0.2s; }
       .bar b.low { background: #b0442e; }
+      .bar b.grow { background: #8a6a3a; }
+      #stage { font-weight: 600; margin-bottom: 2px; }
+      #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0;
+        background: radial-gradient(ellipse at center, transparent 45%, rgba(160,20,10,0.55)); }
       #prompt { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); font: 15px system-ui, sans-serif;
         color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.7); pointer-events: none; }
       #scent { position: fixed; left: 50%; bottom: 96px; font: 30px system-ui, sans-serif; color: #fff;
@@ -29,7 +33,8 @@
     </style>
   </head>
   <body>
-    <div id="bars"></div>
+    <div id="bars"><div id="stage"></div></div>
+    <div id="hurt"></div>
     <div id="prompt"></div>
     <div id="scent" hidden>▲</div>
     <div id="death" hidden></div>

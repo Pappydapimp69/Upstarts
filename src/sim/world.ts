@@ -8,6 +8,9 @@ import { wrapAngle } from './math';
 import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
+import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
+import { biteDamage } from './combat';
+import { bodyOf, GROWTH } from './growth';
 
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
@@ -53,9 +56,17 @@ export const BITE = {
   bleed: 20, // s a bitten animal bleeds (and smells of blood)
 };
 
+export const SAUROS = {
+  homes: [{ x: -38, z: -34 }], // one apex predator for this valley (dlist/E9: predators are rare)
+  respawn: 600, // s after one dies before another moves in
+};
+
+export const PLAYER_ID = 0; // ids from nextId start at 1
+
 export interface Death {
   age: number; // s it lived
-  cause: 'hunger' | 'thirst';
+  growth: number;
+  cause: 'hunger' | 'thirst' | 'Saurosuchus';
 }
 
 export interface World {
@@ -70,14 +81,19 @@ export interface World {
   needScale: number; // 1 = real time; tests and ?fast speed it up
   herds: Herd[];
   herbivores: Herbivore[];
+  sauros: Sauro[];
+  sauroGoneAt: number; // world time the last one died, -1 if alive
+  startGrowth: number; // what new animals hatch at (0 = hatchling)
 }
 
-export function createWorld(seed = 1, needScale = 1): World {
+// startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
+export function createWorld(seed = 1, needScale = 1, startGrowth = 0): World {
   const rand = rng(seed);
   const w: World = {
-    tick: 0, seed, rand, player: spawnDino(rand), carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
-    herds: [], herbivores: [],
+    tick: 0, seed, rand, player: spawnDino(rand, startGrowth), carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
+    herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth,
   };
+  for (const h of SAUROS.homes) w.sauros.push(createSauro(w.nextId++, h.x, h.z));
   for (let i = 0; i < CARCASS.start; i++) placeCarcass(w);
   for (let i = 0; i < HERDS.count; i++) {
     const a = (i / HERDS.count) * Math.PI * 2 + 0.5;
@@ -112,22 +128,33 @@ function addHerbivore(w: World, herd: Herd, x: number, z: number): void {
   });
 }
 
-// What the herbivores can sense of the player this tick. Footsteps carry further the faster it goes.
+// What the herbivores can sense of the player this tick. Footsteps carry further the faster
+// and heavier it goes.
+const noiseOf = (speed: number, mass: number): number => (speed < 0.3 ? 0 : (3 + speed * 3) * Math.cbrt(mass / 350));
 function predatorOf(d: Dino): Predator {
-  return { x: d.x, z: d.z, speed: d.speed, noise: d.speed < 0.3 ? 0 : 3 + d.speed * 3, alive: d.alive };
+  return { x: d.x, z: d.z, speed: d.speed, noise: noiseOf(d.speed, d.body.mass), alive: d.alive, mass: d.body.mass, stealth: 1 };
+}
+function predatorOfSauro(s: Sauro): Predator {
+  return {
+    x: s.x, z: s.z, speed: s.speed, noise: noiseOf(s.speed, SAUROSUCHUS.mass) * (s.state === 'stalk' ? 0.4 : 1),
+    alive: s.state !== 'dead', mass: SAUROSUCHUS.mass, stealth: s.state === 'stalk' ? SAUROSUCHUS.stealth : 1,
+  };
 }
 
-// Live prey in reach of the jaws, straight ahead.
-function preyInReach(w: World, d: Dino): Herbivore | null {
-  let best: Herbivore | null = null, bestD = d.species.snout + BITE.reach + HYPERODAPEDON.length / 2;
-  for (const h of w.herbivores) {
-    if (h.state === 'dead') continue;
-    const dist = Math.hypot(h.x - d.x, h.z - d.z);
-    if (dist < bestD && Math.abs(wrapAngle(Math.atan2(h.x - d.x, h.z - d.z) - d.yaw)) < BITE.cone) {
-      best = h;
+// Something alive in reach of the jaws, straight ahead.
+type Target = { kind: 'herb'; h: Herbivore } | { kind: 'sauro'; s: Sauro };
+function preyInReach(w: World, d: Dino): Target | null {
+  let best: Target | null = null, bestD = Infinity;
+  const consider = (x: number, z: number, radius: number, t: Target): void => {
+    const dist = Math.hypot(x - d.x, z - d.z);
+    if (dist < d.body.snout + BITE.reach + radius && dist < bestD
+      && Math.abs(wrapAngle(Math.atan2(x - d.x, z - d.z) - d.yaw)) < BITE.cone) {
+      best = t;
       bestD = dist;
     }
-  }
+  };
+  for (const h of w.herbivores) if (h.state !== 'dead') consider(h.x, h.z, HYPERODAPEDON.length / 2, { kind: 'herb', h });
+  for (const s of w.sauros) if (s.state !== 'dead') consider(s.x, s.z, 1.4, { kind: 'sauro', s });
   return best;
 }
 
@@ -143,9 +170,9 @@ function smell(w: World, d: Dino): { yaw: number; strength: number } | null {
   return best;
 }
 
-function spawnDino(rand: () => number): Dino {
+function spawnDino(rand: () => number, growth: number): Dino {
   const s = SPAWNS[Math.floor(rand() * SPAWNS.length)];
-  return createDino(HERRERASAURUS, s.x, s.z, s.yaw);
+  return createDino(HERRERASAURUS, s.x, s.z, s.yaw, growth);
 }
 
 // Somewhere on the dry valley floor.
@@ -171,7 +198,7 @@ function findWater(d: Dino): { yaw: number; dist: number } | null {
   let best: { yaw: number; dist: number } | null = null;
   for (let i = 0; i < 24; i++) {
     const yaw = (i / 24) * Math.PI * 2;
-    for (let r = 0.6; r <= d.species.reach; r += 0.2) {
+    for (let r = Math.min(0.6, d.body.reach / 2); r <= d.body.reach; r += 0.2) {
       if (waterDepthAt(d.x + Math.sin(yaw) * r, d.z + Math.cos(yaw) * r) > 0.05) {
         if (!best || r < best.dist) best = { yaw, dist: r };
         break;
@@ -179,6 +206,16 @@ function findWater(d: Dino): { yaw: number; dist: number } | null {
     }
   }
   return best;
+}
+
+function killPlayer(w: World, cause: Death['cause']): void {
+  const d = w.player;
+  d.alive = false;
+  d.act = 'none';
+  d.needs.health = 0;
+  w.lastDeath = { age: d.age, growth: d.growth, cause };
+  // Its body stays in the world as a carcass others can eat, from the moment it dies.
+  placeCarcassAt(w, d.x, d.z, d.yaw, d.body.meat);
 }
 
 // Turn to face a point, creep up until the lowered snout is over it, then act.
@@ -196,9 +233,7 @@ export function step(w: World, cmd: Command): void {
   if (!d.alive) {
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
-      // Its body stays in the world as a carcass others can eat.
-      placeCarcass(w, d.x, d.z, d.species.meat);
-      w.player = spawnDino(w.rand);
+      w.player = spawnDino(w.rand, w.startGrowth);
       w.lives++;
     }
   } else {
@@ -211,7 +246,7 @@ export function step(w: World, cmd: Command): void {
     const prey = cmd.eat ? preyInReach(w, d) : null;
     if (cmd.drink) {
       const water = findWater(d);
-      if (water) ({ act, ov } = approach(d, water.yaw, water.dist, d.species.snout, 'drink'));
+      if (water) ({ act, ov } = approach(d, water.yaw, water.dist, d.body.snout, 'drink'));
       else {
         // No water in reach: stand and sniff the air.
         act = 'sniff';
@@ -223,15 +258,28 @@ export function step(w: World, cmd: Command): void {
       if (d.biteT >= BITE.cooldown && d.stamina > BITE.stamina) {
         d.biteT = 0;
         d.stamina -= BITE.stamina;
-        prey.health -= HYPERODAPEDON.bite;
-        prey.bleeding = BITE.bleed;
-        prey.threatX = d.x;
-        prey.threatZ = d.z;
-        prey.alarmAt = w.tick * TICK_DT;
-        if (prey.health <= 0) prey.state = 'dead';
+        if (prey.kind === 'herb') {
+          const h = prey.h;
+          h.health -= biteDamage(d.body.mass, HYPERODAPEDON.mass);
+          h.bleeding = BITE.bleed;
+          h.threatX = d.x;
+          h.threatZ = d.z;
+          h.alarmAt = w.tick * TICK_DT;
+          if (h.health <= 0) h.state = 'dead';
+        } else {
+          const s = prey.s;
+          s.health -= biteDamage(d.body.mass, SAUROSUCHUS.mass);
+          if (s.health <= 0) s.state = 'dead';
+          // Bitten, it turns on whatever bit it, hungry or not.
+          else if (s.state !== 'retreat' && s.state !== 'charge') {
+            s.target = PLAYER_ID;
+            s.state = 'charge';
+            s.stateT = 0;
+          }
+        }
       }
     } else if (cmd.eat) {
-      let bestD = d.species.reach + CARCASS.radius;
+      let bestD = d.body.reach + CARCASS.radius;
       for (const c of w.carcasses) {
         const dist = Math.hypot(c.x - d.x, c.z - d.z);
         if (dist < bestD) {
@@ -241,7 +289,7 @@ export function step(w: World, cmd: Command): void {
       }
       if (food) {
         const yaw = Math.atan2(food.x - d.x, food.z - d.z);
-        ({ act, ov } = approach(d, yaw, bestD, d.species.snout + CARCASS.radius, 'eat'));
+        ({ act, ov } = approach(d, yaw, bestD, d.body.snout + CARCASS.radius, 'eat'));
       }
     }
     d.act = act;
@@ -256,21 +304,87 @@ export function step(w: World, cmd: Command): void {
     }
     stepNeeds(n, isSprinting(d, cmd), dt, w.needScale);
     d.age += dt;
-
-    if (n.health <= 0) {
-      d.alive = false;
-      d.act = 'none';
-      w.lastDeath = { age: d.age, cause: n.thirst <= 0 ? 'thirst' : 'hunger' };
+    d.hitT += dt;
+    // Grows only while fed and watered.
+    if (d.growth < 1 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove) {
+      d.growth = Math.min(1, d.growth + (dt * w.needScale) / GROWTH.toAdult);
+      d.body = bodyOf(d.species, d.growth);
     }
   }
 
-  const pred = predatorOf(w.player);
-  for (const h of w.herbivores) {
-    const herd = w.herds[h.herd];
-    stepHerbivore(h, herd, w.herbivores, pred, w.rand, dt, w.tick * TICK_DT);
+  // Saurosuchus: hunts the player and the herds, eats carcasses.
+  const now = w.tick * TICK_DT;
+  const quarry: Quarry[] = [];
+  if (w.player.alive) {
+    const p = w.player;
+    quarry.push({ id: PLAYER_ID, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass, noise: noiseOf(p.speed, p.body.mass) });
   }
   for (const h of w.herbivores) {
-    if (h.state === 'dead') placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat);
+    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass, noise: noiseOf(h.speed, HYPERODAPEDON.mass) });
+  }
+  for (const s of w.sauros) {
+    stepSauro(s, {
+      now, rand: w.rand, quarry, carcasses: w.carcasses,
+      bite: (id) => {
+        if (id === PLAYER_ID) {
+          const p = w.player;
+          p.needs.health = Math.max(0, p.needs.health - biteDamage(SAUROSUCHUS.mass, p.body.mass, SAUROSUCHUS.biteMult));
+          p.hitT = 0;
+          if (p.needs.health <= 0 && p.alive) killPlayer(w, 'Saurosuchus');
+        } else {
+          const h = w.herbivores.find((k) => k.id === id);
+          if (!h) return;
+          h.health -= biteDamage(SAUROSUCHUS.mass, HYPERODAPEDON.mass, SAUROSUCHUS.biteMult);
+          h.bleeding = BITE.bleed;
+          h.threatX = s.x;
+          h.threatZ = s.z;
+          h.alarmAt = now;
+          if (h.health <= 0) h.state = 'dead';
+        }
+      },
+      eat: (id, kg) => {
+        const c = w.carcasses.find((k) => k.id === id);
+        if (!c) return 0;
+        const e = Math.min(c.meat, kg);
+        c.meat -= e;
+        return e;
+      },
+    }, dt);
+    // A kill becomes a carcass where it fell; it eats from that.
+    if (s.target !== -1 && s.state !== 'eat') {
+      const dead = w.herbivores.find((h) => h.id === s.target && h.state === 'dead');
+      if (dead) {
+        placeCarcassAt(w, dead.x, dead.z, dead.yaw, HYPERODAPEDON.meat);
+        dead.state = 'dead';
+        s.target = w.carcasses[w.carcasses.length - 1].id;
+        s.state = 'eat';
+        s.stateT = 0;
+        dead.health = -1; // already turned into a carcass
+      }
+    }
+  }
+  for (const s of w.sauros) {
+    if (s.state === 'dead' && s.health > -1) {
+      placeCarcassAt(w, s.x, s.z, s.yaw, SAUROSUCHUS.meat);
+      s.health = -1;
+      w.sauroGoneAt = now;
+    }
+  }
+  w.sauros = w.sauros.filter((s) => s.state !== 'dead');
+  if (!w.sauros.length && w.sauroGoneAt >= 0 && now - w.sauroGoneAt > SAUROS.respawn) {
+    const h = SAUROS.homes[0];
+    w.sauros.push(createSauro(w.nextId++, h.x, h.z));
+    w.sauroGoneAt = -1;
+  }
+  if (w.player.alive && w.player.needs.health <= 0) killPlayer(w, w.player.needs.thirst <= 0 ? 'thirst' : 'hunger');
+
+  const preds = [predatorOf(w.player), ...w.sauros.map(predatorOfSauro)];
+  for (const h of w.herbivores) {
+    const herd = w.herds[h.herd];
+    stepHerbivore(h, herd, w.herbivores, preds, w.rand, dt, now);
+  }
+  for (const h of w.herbivores) {
+    if (h.state === 'dead' && h.health > -1) placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat);
   }
   w.herbivores = w.herbivores.filter((h) => h.state !== 'dead');
   // A calm herd moves on once it reaches where it was heading.

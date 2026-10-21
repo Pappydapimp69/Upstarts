@@ -1,5 +1,6 @@
 import type { Dino } from '../sim/dino';
 import type { World } from '../sim/world';
+import { stageOf } from '../sim/growth';
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
 const KEY = 'upstarts.records';
@@ -26,11 +27,13 @@ export class Hud {
   private readonly prompt: HTMLElement;
   private readonly death: HTMLElement;
   private readonly arrow: HTMLElement;
+  private readonly stage: HTMLElement;
+  private readonly hurt: HTMLElement;
   private readonly records = loadRecords();
   private seenDeath: unknown = null;
 
   constructor(root: HTMLElement) {
-    for (const name of ['health', 'hunger', 'thirst', 'stamina']) {
+    for (const name of ['health', 'hunger', 'thirst', 'stamina', 'growth']) {
       const row = document.createElement('div');
       row.className = 'bar';
       row.innerHTML = `<span>${name}</span><i><b></b></i>`;
@@ -40,15 +43,18 @@ export class Hud {
     this.prompt = root.querySelector('#prompt')!;
     this.death = root.querySelector('#death')!;
     this.arrow = root.querySelector('#scent')!;
+    this.stage = root.querySelector('#stage')!;
+    this.hurt = root.querySelector('#hurt')!;
   }
 
   update(w: World, nearWater: boolean, nearFood: boolean, nearPrey: boolean, camYaw: number): void {
     const d: Dino = w.player;
-    const v = { health: d.needs.health, hunger: d.needs.hunger, thirst: d.needs.thirst, stamina: d.stamina };
+    const v = { health: d.needs.health, hunger: d.needs.hunger, thirst: d.needs.thirst, stamina: d.stamina, growth: d.growth };
     for (const [k, el] of this.bars) {
       const f = v[k as keyof typeof v];
       el.style.width = `${(f * 100).toFixed(1)}%`;
-      el.classList.toggle('low', f < 0.25);
+      el.classList.toggle('low', f < 0.25 && k !== 'growth');
+      el.classList.toggle('grow', k === 'growth');
     }
 
     const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'bite' ? 'Biting'
@@ -70,11 +76,14 @@ export class Hud {
       this.records.longestLife = Math.max(this.records.longestLife, w.lastDeath.age);
       this.records.lives++;
       saveRecords(this.records);
-      this.death.innerHTML = `<h2>Died of ${w.lastDeath.cause}</h2>
-        <p>Lived ${fmt(w.lastDeath.age)}${best ? ' · new record' : ''}</p>
+      const how = w.lastDeath.cause === 'Saurosuchus' ? 'Killed by Saurosuchus' : `Died of ${w.lastDeath.cause}`;
+      this.death.innerHTML = `<h2>${how}</h2>
+        <p>Lived ${fmt(w.lastDeath.age)} · reached ${stageOf(w.lastDeath.growth)}${best ? ' · new record' : ''}</p>
         <p>Longest life ${fmt(this.records.longestLife)} · ${this.records.lives} ${this.records.lives === 1 ? 'life' : 'lives'}</p>
         <p class="go">Enter / A to hatch again</p>`;
     }
     this.death.hidden = d.alive;
+    this.stage.textContent = `${d.species.name} · ${stageOf(d.growth)}`;
+    this.hurt.style.opacity = d.alive && d.hitT < 0.6 ? String(1 - d.hitT / 0.6) : '0';
   }
 }

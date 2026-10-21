@@ -10,6 +10,7 @@ const idle: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 // One herd of 7 grazing in the open, the player placed relative to its centre.
 function oneHerd(px: number, pz: number): World {
   const w = createWorld(3);
+  w.sauros = [];
   w.herbivores = w.herbivores.filter((h) => h.herd === 0);
   w.herbivores.forEach((h, i) => {
     h.x = -20 + (i % 3) * 3;
@@ -36,14 +37,14 @@ describe('scent', () => {
 });
 
 describe('herbivore senses', () => {
-  const still = { x: 0, z: 0, speed: 0, noise: 0, alive: true };
+  const still = { x: 0, z: 0, speed: 0, noise: 0, alive: true, mass: 350, stealth: 1 };
   it('smells a still predator upwind of it, but not one downwind', () => {
     // Upwind predator, prey 30 m downwind and facing away.
     expect(senses(herbAt(WIND.x * 30, WIND.z * 30, Math.atan2(WIND.x, WIND.z)), still)).toBe(true);
     expect(senses(herbAt(-WIND.x * 30, -WIND.z * 30, Math.atan2(-WIND.x, -WIND.z)), still)).toBe(false);
   });
   it('hears a sprinting predator behind it', () => {
-    const run = { x: 0, z: 0, speed: 7, noise: 3 + 7 * 3, alive: true };
+    const run = { x: 0, z: 0, speed: 7, noise: 3 + 7 * 3, alive: true, mass: 350, stealth: 1 };
     // Crosswind so smell can't help, facing away so sight can't.
     const h = herbAt(WIND.z * 20, -WIND.x * 20, Math.atan2(WIND.z, -WIND.x));
     expect(senses(h, run)).toBe(true);
@@ -153,7 +154,7 @@ describe('hunting', () => {
 
 describe('determinism with herds', () => {
   it('two worlds with the same seed and commands match tick for tick', () => {
-    const a = createWorld(11), b = createWorld(11);
+    const a = createWorld(11, 1, 1), b = createWorld(11, 1, 1);
     const script = (t: number): Command => ({ moveX: Math.sin(t * 0.004), moveZ: Math.cos(t * 0.004), sprint: t % 400 > 250 ? 1 : 0, eat: t % 50 < 10 });
     for (let t = 0; t < 6000; t++) {
       step(a, script(t));

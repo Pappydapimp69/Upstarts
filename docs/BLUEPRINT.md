@@ -1,6 +1,6 @@
 # Upstarts — Game Blueprint
 
-Status: **M3 built** (life: Hyperodapedon herds, sight, hearing, scent, hunting). Game code lives in this repo; the demo and
+Status: **M4 built** (fight and grow: size-scaled bites, hatchling to adult, Saurosuchus). Game code lives in this repo; the demo and
 tutorial live in [Dlist](https://github.com/Pappydapimp69/Dlist). Everything below is a proposal until
 marked **LOCKED**. Items marked **YOUR CALL** need a decision from you.
 
@@ -406,7 +406,7 @@ time on art (M5).**
 ## 14. Open decisions — YOUR CALL
 
 1. ~~Survival stats~~ Decided: the §4 set as proposed (D12).
-2. Growth time: about 2–3 hours to adult, or longer like *The Isle*?
+2. Growth time: about 2–3 hours to adult, or longer like *The Isle*? (Built at 2.5 h as a single setting, `GROWTH.toAdult`.)
 3. ~~Death~~ Decided: permanent (D10); only records carry over (D13).
 4. Map: start at 2 × 2 km, as proposed?
 5. ~~Day length~~ Decided: 60 min of daylight (40 near midday) plus 20 min of night (D11).

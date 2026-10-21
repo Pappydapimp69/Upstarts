@@ -9,6 +9,11 @@ const runFor = (w: World, cmd: Command, s: number): void => {
   for (let i = 0; i < s * TICK_HZ; i++) step(w, cmd);
 };
 const pond = PONDS[0];
+// Keep the predator out of tests about something else.
+const noSauro = (w: World): World => {
+  w.sauros = [];
+  return w;
+};
 
 // Stand the player on the shore, facing away from the water.
 function onShore(w: World, facingWater: boolean): void {
@@ -18,19 +23,20 @@ function onShore(w: World, facingWater: boolean): void {
 
 describe('needs', () => {
   it('thirst drains faster than hunger', () => {
-    const w = createWorld(1);
+    const w = noSauro(createWorld(1));
     runFor(w, idle, 60);
     expect(1 - w.player.needs.thirst).toBeGreaterThan(1 - w.player.needs.hunger);
   });
 
-  it('dies of thirst, leaves a carcass on respawn, and keeps nothing but the count', () => {
-    const w = createWorld(1, 50);
+  it('dies of thirst, leaves a carcass, and respawns with nothing but the count', () => {
+    const w = noSauro(createWorld(1, 50, 1));
     w.carcasses = [];
     let t = 0;
     while (w.player.alive && t++ < 60 * 60 * TICK_HZ) step(w, idle);
     expect(w.player.alive).toBe(false);
     expect(w.lastDeath?.cause).toBe('thirst');
     const body = { x: w.player.x, z: w.player.z };
+    expect(w.carcasses.some((c) => Math.hypot(c.x - body.x, c.z - body.z) < 0.01 && c.meat > 100)).toBe(true);
     step(w, { ...idle, respawn: true });
     expect(w.player.alive).toBe(true);
     expect(w.player.needs).toEqual({ hunger: 1, thirst: 1, health: 1 });
@@ -41,7 +47,7 @@ describe('needs', () => {
 
 describe('drinking', () => {
   it('turns round to water behind it, then drinks thirst back up', () => {
-    const w = createWorld(1, 20);
+    const w = noSauro(createWorld(1, 20));
     onShore(w, false);
     w.player.needs.thirst = 0.3;
     const acts = new Set<string>();
@@ -55,7 +61,7 @@ describe('drinking', () => {
   });
 
   it('sniffs instead of drinking away from water', () => {
-    const w = createWorld(1);
+    const w = noSauro(createWorld(1));
     w.player = createDino(HERRERASAURUS, -20, 20, 0);
     w.player.needs.thirst = 0.5;
     runFor(w, { ...idle, drink: true }, 3);
@@ -64,7 +70,7 @@ describe('drinking', () => {
   });
 
   it('will not wade in over its depth', () => {
-    const w = createWorld(1);
+    const w = noSauro(createWorld(1));
     onShore(w, true);
     let deepest = 0;
     for (let i = 0; i < 15 * TICK_HZ; i++) {
@@ -77,7 +83,7 @@ describe('drinking', () => {
 
 describe('eating', () => {
   it('eats a carcass: meat goes down, hunger goes up, then it rots away', () => {
-    const w = createWorld(1);
+    const w = noSauro(createWorld(1));
     w.player = createDino(HERRERASAURUS, -20, 20, 0);
     w.player.needs.hunger = 0.2;
     w.carcasses = [{ id: 99, x: -20, z: 22.5, yaw: 0, meat: 30, meat0: 30 }];
@@ -92,7 +98,7 @@ describe('eating', () => {
 
 describe('determinism with survival', () => {
   it('two worlds with the same seed and commands match tick for tick', () => {
-    const a = createWorld(7, 30), b = createWorld(7, 30);
+    const a = createWorld(7, 30), b = createWorld(7, 30); // with the predator, as hatchlings
     const script = (t: number): Command => ({
       moveX: Math.sin(t * 0.01), moveZ: Math.cos(t * 0.013), sprint: t % 300 > 200 ? 1 : 0,
       drink: t % 500 > 450, eat: t % 700 > 620, respawn: t % 97 === 0,

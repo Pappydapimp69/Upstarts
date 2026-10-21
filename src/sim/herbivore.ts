@@ -19,7 +19,7 @@ export const HYPERODAPEDON = {
   sight: 60, // m (dlist/E18: about range + chaser speed x alarm spread + herd depth)
   hearing: 1, // multiplier on the noise radius of whatever it hears
   smell: 0.18, // plume concentration that counts as smelling a predator
-  bite: 0.34, // health a full bite takes off
+  ignoreBelow: 24, // kg: predators smaller than this aren't worth running from
 };
 
 export type HerbState = 'graze' | 'walk' | 'alert' | 'flee' | 'dead';
@@ -56,6 +56,8 @@ export interface Predator {
   speed: number;
   noise: number; // m radius its movement can be heard at
   alive: boolean;
+  mass: number; // kg
+  stealth: number; // multiplier on how far away it can be seen (1 = in the open)
 }
 
 const SEP = 1.6; // m personal space
@@ -65,26 +67,31 @@ const PANIC = 14; // m: closer than this and it flees without waiting
 const CALM = 6; // s without sensing the predator before a fleeing animal settles
 
 export function senses(h: Herbivore, p: Predator): boolean {
-  if (!p.alive) return false;
+  if (!p.alive || p.mass < HYPERODAPEDON.ignoreBelow) return false;
   const dx = p.x - h.x, dz = p.z - h.z;
   const d = Math.hypot(dx, dz);
   // Sight: a wide field of view (eyes on the sides of the head), but a still animal is hard to pick out.
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - h.yaw)) < 2.4;
-  const visible = HYPERODAPEDON.sight * (0.25 + 0.75 * clamp(p.speed / 4, 0, 1));
+  const visible = HYPERODAPEDON.sight * p.stealth * (0.25 + 0.75 * clamp(p.speed / 4, 0, 1));
   if (ahead && d < visible) return true;
   if (d < p.noise * HYPERODAPEDON.hearing) return true;
   return plume(p.x, p.z, 1, h.x, h.z) > HYPERODAPEDON.smell;
 }
 
-export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], p: Predator, rand: () => number, dt: number, now: number): void {
+export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds: Predator[], rand: () => number, dt: number, now: number): void {
   if (h.state === 'dead') {
     h.speed = Math.max(0, h.speed - 6 * dt);
     return;
   }
   h.stateT += dt;
   h.bleeding = Math.max(0, h.bleeding - dt);
-  const sensed = senses(h, p);
-  if (sensed) {
+  // The nearest predator it can sense is the one it runs from.
+  let p: Predator | null = null;
+  for (const k of preds) {
+    if (senses(h, k) && (!p || Math.hypot(k.x - h.x, k.z - h.z) < Math.hypot(p.x - h.x, p.z - h.z))) p = k;
+  }
+  const sensed = !!p;
+  if (p) {
     h.threatX = p.x;
     h.threatZ = p.z;
     h.alarmAt = now;
