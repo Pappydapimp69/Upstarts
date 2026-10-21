@@ -14,6 +14,7 @@ import { biteDamage } from './combat';
 import { bodyOf, GROWTH } from './growth';
 import type { SoundEvent } from './events';
 import { SPRINT_DB, STEP_DB } from './hearing';
+import { createSmall, exaeretodonHome, exposed, GRUB, placeBurrows, placeGrubs, respawnSmall, SMALL, SMALL_POP, smallMass, stepSmall, SWALLOW_BELOW, type Grub, type Small } from './smallprey';
 import { CALLS, callLevel, heardAt, HERD_HEARS, roarStyle, SAURO_HEARS } from './calls';
 
 export const TICK_HZ = 30;
@@ -86,7 +87,7 @@ export interface World {
   seed: number;
   // One seeded stream per system, so a change in how often one system draws never shifts another's rolls
   // (Brain: test E2, prologue E22).
-  rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number };
+  rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number; prey: () => number };
   players: PlayerSlot[];
   // The local player (players[0]): its creature, last death, lives and species. Accessors, kept so the
   // client and tests can address "the player" without knowing about slots.
@@ -99,6 +100,8 @@ export interface World {
   herds: Herd[];
   herbivores: Herbivore[];
   sauros: Sauro[];
+  smalls: Small[]; // small cynodonts and Exaeretodon
+  grubs: Grub[]; // dig sites
   sauroGoneAt: number; // world time the last one died, -1 if alive
   startGrowth: number; // what new animals hatch at (0 = hatchling)
   speciesId: SpeciesId; // what the local player hatches as next (accessor)
@@ -107,10 +110,10 @@ export interface World {
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
 export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus'): World {
-  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1) };
+  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37) };
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale,
-    herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth, events: [],
+    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [],
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -129,7 +132,30 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
     pickGoal(w, herd);
     for (let k = 0; k < HERDS.size; k++) addHerbivore(w, herd, Math.cos(a) * 32 + (w.rng.herd() - 0.5) * 10, Math.sin(a) * 32 + (w.rng.herd() - 0.5) * 10);
   }
+  addSmallPrey(w);
   return w;
+}
+
+// The small end of the food chain, all from the prey stream: cynodont burrows, one Exaeretodon group, grubs.
+function addSmallPrey(w: World): void {
+  const r = w.rng.prey;
+  for (const b of placeBurrows(r)) {
+    for (let k = 0; k < SMALL_POP.perBurrow; k++) w.smalls.push(createSmall(w.nextId++, 'cynodont', b.x, b.z, smallMass('cynodont', r), r));
+  }
+  const home = exaeretodonHome(r), ex = SMALL_POP.exaeretodon;
+  for (let k = 0; k < ex.adults + ex.juveniles; k++) {
+    w.smalls.push(createSmall(w.nextId++, 'exaeretodon', home.x, home.z, smallMass('exaeretodon', r, k >= ex.adults), r));
+  }
+  w.grubs = placeGrubs(r, w.nextId);
+  w.nextId += w.grubs.length;
+}
+
+// How much meat fills this animal's empty stomach: 25 kg for an adult Herrerasaurus, scaled by mass.
+const stomachOf = (d: Dino): number => NEEDS.kgPerHunger * (d.body.mass / 350);
+
+// Put meat in its stomach; whatever doesn't fit is wasted.
+function feed(d: Dino, kg: number): void {
+  d.needs.hunger = Math.min(1, d.needs.hunger + kg / stomachOf(d));
 }
 
 function dry(x: number, z: number): boolean {
@@ -178,8 +204,21 @@ function footfalls(w: World, o: { gait: number }, id: number, x: number, z: numb
   w.events.push({ kind: 'step', who: id <= PLAYER_ID ? 'player' : 'prey', id, x, y: heightAt(x, z), z, level: STEP_DB(mass, speed) + extraDb });
 }
 
+// The nearest dig site with a grub in it, under the snout.
+function grubInReach(w: World, d: Dino, now: number): Grub | null {
+  let best: Grub | null = null, bestD = d.body.snout + GRUB.reach + 0.6;
+  for (const g of w.grubs) {
+    const dist = Math.hypot(g.x - d.x, g.z - d.z);
+    if (g.readyAt <= now && dist < bestD) {
+      best = g;
+      bestD = dist;
+    }
+  }
+  return best;
+}
+
 // Something alive in reach of the jaws, straight ahead.
-type Target = { kind: 'herb'; h: Herbivore } | { kind: 'sauro'; s: Sauro };
+type Target = { kind: 'herb'; h: Herbivore } | { kind: 'sauro'; s: Sauro } | { kind: 'small'; m: Small };
 function preyInReach(w: World, d: Dino): Target | null {
   let best: Target | null = null, bestD = Infinity;
   const consider = (x: number, z: number, radius: number, t: Target): void => {
@@ -192,6 +231,7 @@ function preyInReach(w: World, d: Dino): Target | null {
   };
   for (const h of w.herbivores) if (h.state !== 'dead') consider(h.x, h.z, HYPERODAPEDON.length / 2, { kind: 'herb', h });
   for (const s of w.sauros) if (s.state !== 'dead') consider(s.x, s.z, 1.4, { kind: 'sauro', s });
+  for (const m of w.smalls) if (exposed(m)) consider(m.x, m.z, SMALL[m.kind].length / 2, { kind: 'small', m });
   return best;
 }
 
@@ -204,6 +244,7 @@ function smell(w: World, d: Dino): { yaw: number; strength: number } | null {
   };
   for (const c of w.carcasses) consider(c.x, c.z, 0.5 + c.meat / 100);
   for (const h of w.herbivores) if (h.bleeding > 0) consider(h.x, h.z, 1.5);
+  for (const m of w.smalls) if (m.bleeding > 0 && exposed(m)) consider(m.x, m.z, 0.3 + m.mass / 50);
   return best;
 }
 
@@ -332,6 +373,24 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
           h.threatZ = d.z;
           h.alarmAt = w.tick * TICK_DT;
           if (h.health <= 0) h.state = 'dead';
+        } else if (prey.kind === 'small') {
+          const m = prey.m;
+          const share = biteDamage(d.body.mass, m.mass, d.species.biteMult);
+          m.health -= share;
+          const y = groundY(m.x, m.z) + SMALL[m.kind].hip;
+          w.events.push({ kind: 'hit', who: 'player', x: m.x, y, z: m.z, level: 66 + 10 * Math.log10(m.mass) + 8 * share, share });
+          w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: m.x, y, z: m.z, level: 60 + 10 * Math.log10(m.mass) });
+          m.bleeding = BITE.bleed;
+          m.threatX = d.x;
+          m.threatZ = d.z;
+          m.alarmAt = w.tick * TICK_DT;
+          if (m.health <= 0) {
+            // Small enough to swallow whole; anything bigger leaves a carcass.
+            if (m.mass < SWALLOW_BELOW) feed(d, m.mass * 0.6);
+            else placeCarcassAt(w, m.x, m.z, m.yaw, m.mass * 0.5);
+            m.state = 'gone';
+            m.stateT = 0;
+          }
         } else {
           const s = prey.s;
           const share = biteDamage(d.body.mass, SAUROSUCHUS.mass, d.species.biteMult, SAUROSUCHUS.hide);
@@ -356,9 +415,23 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
           food = c;
         }
       }
+      const now = w.tick * TICK_DT;
+      const grub = food ? null : grubInReach(w, d, now);
       if (food) {
         const yaw = Math.atan2(food.x - d.x, food.z - d.z);
         ({ act, ov } = approach(d, yaw, bestD, d.body.snout + CARCASS.radius, 'eat'));
+      } else if (grub) {
+        // Dig it out: a second or so of scratching, then one mouthful.
+        const dist = Math.hypot(grub.x - d.x, grub.z - d.z);
+        ({ act, ov } = approach(d, Math.atan2(grub.x - d.x, grub.z - d.z), dist, d.body.snout + GRUB.reach, 'dig'));
+        if (act === 'dig') {
+          grub.dug += dt;
+          if (grub.dug >= GRUB.dig) {
+            feed(d, GRUB.kg);
+            grub.dug = 0;
+            grub.readyAt = now + GRUB.respawn;
+          }
+        }
       } else if (d.species.diet === 'omnivore' && browseAt(d.x, d.z) > 0.5) {
         // Nothing to eat but ferns: an omnivore browses where it stands.
         act = 'browse';
@@ -374,7 +447,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
       // Stomach and bite size scale with the animal: an empty stomach holds 25 kg for an adult Herrerasaurus
       // and fills in about 12 s; a hatchling's fills in about 4 s from a few hundred grams.
       const m = d.body.mass / 350;
-      const stomach = NEEDS.kgPerHunger * m, rate = NEEDS.eatRate * Math.pow(m, 0.75);
+      const stomach = stomachOf(d), rate = NEEDS.eatRate * Math.pow(m, 0.75);
       const kg = Math.min(food.meat, rate * dt, (1 - n.hunger) * stomach);
       food.meat -= kg;
       n.hunger = Math.min(1, n.hunger + kg / stomach);
@@ -520,6 +593,11 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     const herd = w.herds[h.herd];
     stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now, heard);
     footfalls(w, h, h.id, h.x, h.z, HYPERODAPEDON.mass, h.speed, 0.9, 4, dt);
+  }
+  for (const m of w.smalls) {
+    stepSmall(m, preds, w.rng.prey, dt, now, heard);
+    if (m.kind === 'exaeretodon' && exposed(m)) footfalls(w, m, m.id, m.x, m.z, m.mass, m.speed, 0.7 * Math.cbrt(m.mass / 50), 4, dt);
+    if (m.state === 'gone' && m.stateT > SMALL[m.kind].respawn) respawnSmall(m, w.rng.prey);
   }
   for (const h of w.herbivores) {
     if (h.state === 'dead' && h.health > -1) placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat);

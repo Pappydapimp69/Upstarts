@@ -21,7 +21,7 @@ export interface Command {
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
-export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff';
+export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff' | 'dig';
 
 export interface Dino {
   species: Species;

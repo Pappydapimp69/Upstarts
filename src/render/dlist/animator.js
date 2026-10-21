@@ -170,7 +170,7 @@ export class HerreraAnimator {
       const bt = D.actT % 1.5;
       for (const ti of [0.1, 0.26, 0.42]) { nose += Math.exp(-(((bt - ti) / 0.035) ** 2)); if (bt >= ti && (D.actU < ti || D.actU > bt)) this.onSound?.('sniff', snout); }
       D.actU = bt;
-    } else if (D.act === 'eat' || D.act === 'browse') {
+    } else if (D.act === 'eat' || D.act === 'browse' || D.act === 'dig') {
       // Head down on the kill: grip, tear back, swallow.
       dipTo = s.dipY ?? null;
       hdT = 1; const P = 1.1, u = D.actT % P;

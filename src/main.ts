@@ -9,6 +9,8 @@ import { FollowCamera } from './render/camera';
 import { CarcassMeshes } from './render/worldMeshes';
 import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
+import { SmallMeshes } from './render/smallMesh';
+import { exposed, SMALL } from './sim/smallprey';
 import { SauroMeshes } from './render/sauroMesh';
 import { FootfallRumble } from './render/rumble';
 import { AudioLayer, tractOf, type Surface } from './audio/audio';
@@ -29,6 +31,8 @@ const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
 const herbMeshes = new HerbivoreMeshes();
 view.scene.add(herbMeshes.group);
+const smallMeshes = new SmallMeshes();
+view.scene.add(smallMeshes.group);
 const sauroMeshes = new SauroMeshes();
 view.scene.add(sauroMeshes.group);
 
@@ -103,10 +107,13 @@ function nearby(): { water: boolean; food: boolean; prey: boolean; browse: boole
     const a = (i / 12) * Math.PI * 2;
     water = waterDepthAt(p.x + Math.sin(a) * r, p.z + Math.cos(a) * r) > 0.05;
   }
-  const food = world.carcasses.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < r + CARCASS.radius);
+  const now = world.tick * TICK_DT;
+  const food = world.carcasses.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < r + CARCASS.radius)
+    || world.grubs.some((g) => g.readyAt <= now && Math.hypot(g.x - p.x, g.z - p.z) < p.body.snout + 1);
   const inFront = (x: number, z: number, rad: number): boolean => Math.hypot(x - p.x, z - p.z) < p.body.snout + 0.6 + rad
     && Math.abs(wrapAngle(Math.atan2(x - p.x, z - p.z) - p.yaw)) < 0.7;
-  const prey = world.herbivores.some((h) => inFront(h.x, h.z, 0.8)) || world.sauros.some((s) => inFront(s.x, s.z, 1.4));
+  const prey = world.herbivores.some((h) => inFront(h.x, h.z, 0.8)) || world.sauros.some((s) => inFront(s.x, s.z, 1.4))
+    || world.smalls.some((s) => exposed(s) && inFront(s.x, s.z, SMALL[s.kind].length / 2));
   const browse = p.species.diet === 'omnivore' && browseAt(p.x, p.z) > 0.5;
   return { water, food, prey, browse };
 }
@@ -158,6 +165,7 @@ function frame(now: number): void {
     pendingCall = undefined;
     pendingRespawn = false;
     herbMeshes.beforeTick(world.herbivores);
+    smallMeshes.beforeTick(world.smalls);
     sauroMeshes.beforeTick(world.sauros);
     step(world, cmd);
     for (const ev of world.events) {
@@ -184,7 +192,7 @@ function frame(now: number): void {
 
   // Snout target when eating: the top of the nearest carcass.
   let dipY: number | undefined;
-  if (p.act === 'browse') dipY = heightAt(p.x, p.z) + 0.15 * p.body.hip;
+  if (p.act === 'browse' || p.act === 'dig') dipY = heightAt(p.x, p.z) + 0.15 * p.body.hip;
   if (p.act === 'eat') {
     const c = world.carcasses.reduce((b, k) => (Math.hypot(k.x - p.x, k.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? k : b), world.carcasses[0]);
     if (c) dipY = heightAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
@@ -192,6 +200,7 @@ function frame(now: number): void {
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
     biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY }, dt);
   herbMeshes.update(world.herbivores, a, dt);
+  smallMeshes.update(world.smalls, world.grubs, world.tick * TICK_DT, a, dt);
   sauroMeshes.update(world.sauros, a, dt);
   carcassMeshes.sync(world.carcasses, heightAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);
   // Saurosuchus bodies (head to tail) block the camera.
@@ -215,4 +224,4 @@ function frame(now: number): void {
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.
-(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, herrera, view, audio };
+(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, smallMeshes, herrera, view, audio };
