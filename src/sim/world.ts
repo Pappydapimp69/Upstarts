@@ -11,6 +11,7 @@ import { plume } from './scent';
 import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
 import { biteDamage } from './combat';
 import { bodyOf, GROWTH } from './growth';
+import type { SoundEvent } from './events';
 
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
@@ -80,6 +81,7 @@ export interface World {
   sauros: Sauro[];
   sauroGoneAt: number; // world time the last one died, -1 if alive
   startGrowth: number; // what new animals hatch at (0 = hatchling)
+  events: SoundEvent[]; // sounds made this tick; the client drains them
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
@@ -87,7 +89,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0): World {
   const rand = rng(seed);
   const w: World = {
     tick: 0, seed, rand, player: spawnDino(rand, startGrowth), carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
-    herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth,
+    herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth, events: [],
   };
   for (const h of SAUROS.homes) w.sauros.push(createSauro(w.nextId++, h.x, h.z));
   for (let i = 0; i < CARCASS.start; i++) placeCarcass(w);
@@ -204,6 +206,13 @@ function findWater(d: Dino): { yaw: number; dist: number } | null {
   return best;
 }
 
+const groundY = (x: number, z: number): number => heightAt(x, z);
+// The snout of an animal standing at (x, z) facing yaw, reach metres ahead and `up` above the ground.
+function mouth(x: number, z: number, yaw: number, reach: number, up: number): { x: number; y: number; z: number } {
+  const mx = x + Math.sin(yaw) * reach, mz = z + Math.cos(yaw) * reach;
+  return { x: mx, y: groundY(mx, mz) + up, z: mz };
+}
+
 function killPlayer(w: World, cause: Death['cause']): void {
   const d = w.player;
   d.alive = false;
@@ -225,6 +234,7 @@ function approach(d: Dino, yaw: number, dist: number, reach: number, act: Act): 
 export function step(w: World, cmd: Command): void {
   const d = w.player;
   const dt = TICK_DT;
+  w.events.length = 0; // last tick's sounds have been read by now
 
   if (!d.alive) {
     stepDino(d, cmd, dt);
@@ -254,9 +264,13 @@ export function step(w: World, cmd: Command): void {
       if (d.biteT >= BITE.cooldown && d.stamina > BITE.stamina) {
         d.biteT = 0;
         d.stamina -= BITE.stamina;
+        w.events.push({ kind: 'bite', who: 'player', ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.8 * d.body.hip), level: 88 + 10 * Math.log10(d.body.mass / 350) });
         if (prey.kind === 'herb') {
           const h = prey.h;
-          h.health -= biteDamage(d.body.mass, HYPERODAPEDON.mass);
+          const share = biteDamage(d.body.mass, HYPERODAPEDON.mass);
+          h.health -= share;
+          w.events.push({ kind: 'hit', who: 'player', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 76 + 8 * share, share });
+          w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
           h.bleeding = BITE.bleed;
           h.threatX = d.x;
           h.threatZ = d.z;
@@ -264,7 +278,10 @@ export function step(w: World, cmd: Command): void {
           if (h.health <= 0) h.state = 'dead';
         } else {
           const s = prey.s;
-          s.health -= biteDamage(d.body.mass, SAUROSUCHUS.mass);
+          const share = biteDamage(d.body.mass, SAUROSUCHUS.mass);
+          s.health -= share;
+          w.events.push({ kind: 'hit', who: 'player', x: s.x, y: groundY(s.x, s.z) + 0.8, z: s.z, level: 76 + 8 * share, share });
+          w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });
           if (s.health <= 0) s.state = 'dead';
           // Bitten, it turns on whatever bit it, hungry or not.
           else if (s.state !== 'retreat' && s.state !== 'charge') {
@@ -319,18 +336,26 @@ export function step(w: World, cmd: Command): void {
     if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass, noise: noiseOf(h.speed, HYPERODAPEDON.mass) });
   }
   for (const s of w.sauros) {
+    const was = s.state;
     stepSauro(s, {
       now, rand: w.rand, quarry, carcasses: w.carcasses,
       bite: (id) => {
+        w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 2.6, 0.9), level: 96 });
         if (id === PLAYER_ID) {
           const p = w.player;
-          p.needs.health = Math.max(0, p.needs.health - biteDamage(SAUROSUCHUS.mass, p.body.mass, SAUROSUCHUS.biteMult));
+          const share = biteDamage(SAUROSUCHUS.mass, p.body.mass, SAUROSUCHUS.biteMult);
+          p.needs.health = Math.max(0, p.needs.health - share);
+          w.events.push({ kind: 'hit', who: 'saurosuchus', x: p.x, y: groundY(p.x, p.z) + 0.8 * p.body.hip, z: p.z, level: 80 + 8 * share, share });
+          w.events.push({ kind: 'call', who: 'player', call: 'yelp', ...mouth(p.x, p.z, p.yaw, p.body.snout, 0.9 * p.body.hip), level: 92 + 10 * Math.log10(p.body.mass / 350) });
           p.hitT = 0;
           if (p.needs.health <= 0 && p.alive) killPlayer(w, 'Saurosuchus');
         } else {
           const h = w.herbivores.find((k) => k.id === id);
           if (!h) return;
-          h.health -= biteDamage(SAUROSUCHUS.mass, HYPERODAPEDON.mass, SAUROSUCHUS.biteMult);
+          const share = biteDamage(SAUROSUCHUS.mass, HYPERODAPEDON.mass, SAUROSUCHUS.biteMult);
+          h.health -= share;
+          w.events.push({ kind: 'hit', who: 'saurosuchus', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 80 + 8 * share, share });
+          w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
           h.bleeding = BITE.bleed;
           h.threatX = s.x;
           h.threatZ = s.z;
@@ -346,6 +371,8 @@ export function step(w: World, cmd: Command): void {
         return e;
       },
     }, dt);
+    // The charge starts with a growl: the ambush gives itself away at the last moment.
+    if (s.state === 'charge' && was !== 'charge') w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });
     // A kill becomes a carcass where it fell; it eats from that.
     if (s.target !== -1 && s.state !== 'eat') {
       const dead = w.herbivores.find((h) => h.id === s.target && h.state === 'dead');

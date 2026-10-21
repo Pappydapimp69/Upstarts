@@ -43,6 +43,7 @@ export class HerreraAnimator {
       hd: 0, hu: 0, tilt: 0, hyaw: 0, dip: 0, act: 'none', actT: 0, actU: 0, sprintT: 0, time: 0, lie: 0, side: 1 };
     this.placed = false;
     this.onStep = null; // (footPosition, side) on each touchdown
+    this.onSound = null; // (kind, snoutPosition) for drinking, sniffing, tearing and the fall
   }
 
   // Put the feet down under the body (on spawn or a teleport).
@@ -115,7 +116,9 @@ export class HerreraAnimator {
     }
 
     // ---- death: topple onto its side ----
+    const lie0 = D.lie;
     D.lie = s.alive ? 0 : Math.min(1, D.lie + dt / 0.45);
+    if (D.lie >= 1 && lie0 < 1) this.onSound?.('thud', V(s.x, rootG, s.z));
     const lie = s.alive ? 0 : D.lie * D.lie;
     const fallRoll = -D.side * 1.35 * lie, fallDrop = 0.86 * lie, fallShift = D.side * 0.72 * lie;
 
@@ -145,17 +148,25 @@ export class HerreraAnimator {
       else if (u < 1.05) { hdT = lerp(1, 0.1, smooth(0.55, 1.0, u)); tiltT = smooth(0.75, 1.05, u); }
       else if (u < 1.8) { hdT = 0.1; tiltT = 1; gulp = (u - 1.05) / 0.75; }
       else { hdT = lerp(0.1, 1, smooth(1.8, 2.3, u)); tiltT = 1 - smooth(1.8, 2.1, u); }
+      const pu = D.actU;
+      if (u >= 0.15 && (pu < 0.15 || pu > u)) this.onSound?.('lap', snout);
+      if (u >= 0.62 && pu < 0.62) this.onSound?.('drip', snout); // head coming up: water runs off the jaws
+      if (u >= 1.12 && pu < 1.12) this.onSound?.('gulp', snout);
+      D.actU = u;
     } else if (D.act === 'sniff') {
       // Head up, snout into the wind, short sharp sniffs in bursts of three with small scanning turns.
       hyawT = clamp(wrapAngle(WIND_FROM_YAW - s.yaw), -1.1, 1.1) + 0.16 * Math.sin(D.actT * 1.1); huT = 1;
       const bt = D.actT % 1.5;
-      for (const ti of [0.1, 0.26, 0.42]) nose += Math.exp(-(((bt - ti) / 0.035) ** 2));
+      for (const ti of [0.1, 0.26, 0.42]) { nose += Math.exp(-(((bt - ti) / 0.035) ** 2)); if (bt >= ti && (D.actU < ti || D.actU > bt)) this.onSound?.('sniff', snout); }
+      D.actU = bt;
     } else if (D.act === 'eat') {
       // Head down on the kill: grip, tear back, swallow.
       dipTo = s.dipY ?? null;
       hdT = 1; const P = 1.1, u = D.actT % P;
       jawOpen = Math.max(jawOpen, u < 0.35 ? 0.45 * smooth(0, 0.3, u) : 0.45 * (1 - smooth(0.35, 0.45, u)));
       tiltT = u > 0.45 && u < 0.85 ? 0.35 : 0;
+      if (u >= 0.42 && (D.actU < 0.42 || D.actU > u)) this.onSound?.('tear', snout);
+      D.actU = u;
     }
     D.hd = damp(D.hd, hdT, 5, dt); D.hu = damp(D.hu, huT, 4, dt); D.tilt = damp(D.tilt, tiltT, 6, dt); D.hyaw = damp(D.hyaw, hyawT, 4, dt);
     if (dipTo != null && D.hd > 0.6) D.dip = clamp(D.dip + (snout.y - dipTo) / sz * 2.5 * dt, -0.3, 0.8); else D.dip = damp(D.dip, 0, 2, dt);
@@ -260,4 +271,6 @@ export class HerreraAnimator {
 
   // World position of the chest, for the camera to follow.
   chest(out) { return this.dino.B.spine2.getWorldPosition(out); }
+  // World position of the snout tip, where mouth sounds come from.
+  snout() { return this.dino.B.head.localToWorld(V(0, -0.09, 0.55)); }
 }

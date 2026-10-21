@@ -32,6 +32,15 @@ The environment, Herrerasaurus model and animation, and the HUD come from the Dl
 (`demos/skin-test`), ported into `src/render/dlist/` and `index.html`. three.js is pinned to
 0.160, the demo's version: on 0.169 the fuzz shader compiles but renders the wrong colour.
 
+## Sound
+
+Every sound is synthesized by the procedural engine from `pappydapimp69/sound-engine` (blueprint D8), vendored
+in `public/sound-engine/` and loaded at runtime. `src/audio/audio.ts` is the Dlist demo's audio layer: the sim
+emits sound events (bites, hits, calls) and the client's animators emit footsteps and mouth sounds; the layer
+plays them and never feeds back into the sim. Sound starts on the first key, click or tap (browsers require a
+gesture). Left and right are swapped once at the output, because three.js seen from above is mirrored against
+the engine's plane.
+
 ## Layout
 
 - `src/sim/`: game state and rules. No Three.js or DOM, so it can move to a

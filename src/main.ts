@@ -10,6 +10,8 @@ import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { SauroMeshes } from './render/sauroMesh';
 import { FootfallRumble } from './render/rumble';
+import { AudioLayer, tractOf, type Surface } from './audio/audio';
+import { clamp } from './sim/math';
 import { HYPERODAPEDON } from './sim/herbivore';
 import { SAUROSUCHUS } from './sim/saurosuchus';
 import { state as inputState } from './input/input';
@@ -33,20 +35,39 @@ view.scene.add(herrera.root);
 herrera.plant(p.x, p.z, p.yaw, p.body.size);
 const cam = new FollowCamera(view.camera, p.yaw, p.x, p.y, p.z);
 initInput(view.renderer.domElement);
+// Sound: the vendored procedural engine, started inside the first key, click or tap (the browser
+// only allows audio from a user gesture). A controller press also tries, where the browser allows it.
+const audio = new AudioLayer();
+const soundChip = document.getElementById('soundChip')!;
+audio.onState = () => {
+  const st = audio.status;
+  soundChip.textContent = st === 'on' ? 'Sound is on' : st === 'failed' ? 'The sound engine could not start in this browser.'
+    : st === 'starting' ? 'Starting the sound engine…' : 'Sound is off. Press a key, click or tap to turn it on.';
+  soundChip.className = st === 'on' ? 'chip ok' : 'chip warn';
+  if (st === 'on') setTimeout(() => (soundChip.hidden = audio.status === 'on'), 2500);
+};
+for (const ev of ['keydown', 'pointerdown'] as const) window.addEventListener(ev, () => audio.start(), { capture: true });
+const surfaceAt = (x: number, z: number): Surface => (waterDepthAt(x, z) > 0.02 ? 'water' : 'packedDirt');
+const tract = (): number => tractOf(p.body.size);
+
 // Footsteps rumble the controller by weight, speed and direction (relative to the camera).
 const rumble = new FootfallRumble();
 const panOf = (x: number, z: number): number => {
   const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz) || 1;
   return (dx * Math.cos(cam.yaw) - dz * Math.sin(cam.yaw)) / d; // camera right is (cos yaw, -sin yaw)
 };
-herrera.onStep = (foot: { x: number; z: number }) => {
+herrera.onStep = (foot: { x: number; y: number; z: number }) => {
   rumble.step({ mass: p.body.mass, speed: p.speed, dist: 0, pan: Math.sign(panOf(foot.x, foot.z)) * 0.6 });
+  // Your own small feet are close-miked: a hatchling's steps are physically almost silent. Only the mix.
+  audio.step('player', foot, p.body.mass, p.speed, surfaceAt(foot.x, foot.z), clamp((350 / p.body.mass) ** 0.3, 1, 3.5));
 };
-const feel = (mass: number) => (x: number, z: number, speed: number, quiet: number): void => {
+herrera.onSound = (kind: 'lap' | 'drip' | 'gulp' | 'sniff' | 'tear' | 'thud', at: { x: number; y: number; z: number }) => audio.body(kind, at, p.body.mass);
+const feel = (who: 'prey' | 'saurosuchus', mass: number) => (x: number, z: number, speed: number, quiet: number): void => {
   rumble.step({ mass, speed, dist: Math.hypot(x - p.x, z - p.z), pan: panOf(x, z), quiet });
+  audio.step(who, { x, y: heightAt(x, z), z }, mass * quiet * quiet, speed, surfaceAt(x, z));
 };
-herbMeshes.onStep = feel(HYPERODAPEDON.mass);
-sauroMeshes.onStep = feel(SAUROSUCHUS.mass);
+herbMeshes.onStep = feel('prey', HYPERODAPEDON.mass);
+sauroMeshes.onStep = feel('saurosuchus', SAUROSUCHUS.mass);
 const ui = new Ui();
 ui.setRumble(rumble.enabled);
 ui.onRumbleButton(() => ui.setRumble(rumble.toggle()));
@@ -80,6 +101,7 @@ function frame(now: number): void {
   const inp = readInput();
   if (!started) {
     if (inp.confirm) {
+      audio.start();
       started = true;
       ui.showIntro(false);
     }
@@ -102,6 +124,7 @@ function frame(now: number): void {
     herbMeshes.beforeTick(world.herbivores);
     sauroMeshes.beforeTick(world.sauros);
     step(world, cmd);
+    for (const ev of world.events) audio.play(ev, tract());
     cmd.respawn = false; // a press acts once, not once per tick
     acc -= TICK_DT;
     if (world.player !== p) {
@@ -138,9 +161,14 @@ function frame(now: number): void {
   const near = nearby();
   ui.update(world, near, cam.yaw);
   rumble.flush(now, live && p.alive && inputState.device === 'pad');
+  {
+    const s0 = world.sauros[0];
+    const snout = herrera.snout();
+    audio.update(view.camera.position, cam.yaw, snout, s0 ? { x: s0.x, y: heightAt(s0.x, s0.z) + 1, z: s0.z } : null, tract());
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.
-(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, herrera, view };
+(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, herrera, view, audio };
