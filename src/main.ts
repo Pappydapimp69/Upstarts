@@ -249,6 +249,8 @@ function frame(now: number): void {
   }
   requestAnimationFrame(frame);
 }
+// ?debug exposes the world and camera for automated checks (screenshots, headless playtests).
+if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, start: () => { started = true; ui.showIntro(false); } };
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.
