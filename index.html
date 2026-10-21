@@ -7,15 +7,29 @@
     <style>
       html, body { margin: 0; height: 100%; background: #c9d6e3; overflow: hidden; }
       canvas { display: block; touch-action: none; }
-      #hud { position: fixed; left: 16px; top: 12px; font: 13px/1.4 system-ui, sans-serif; color: #2b2118;
-        background: rgba(255,255,255,0.55); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+      #bars { position: fixed; left: 16px; top: 12px; display: grid; gap: 4px; pointer-events: none;
+        font: 12px/1 system-ui, sans-serif; color: #2b2118; background: rgba(255,255,255,0.55); padding: 8px; border-radius: 8px; }
+      .bar { display: grid; grid-template-columns: 56px 120px; align-items: center; gap: 6px; }
+      .bar i { height: 8px; background: rgba(0,0,0,0.15); border-radius: 4px; overflow: hidden; }
+      .bar b { display: block; height: 100%; background: #5a7a3a; transition: width 0.2s; }
+      .bar b.low { background: #b0442e; }
+      #prompt { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); font: 15px system-ui, sans-serif;
+        color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.7); pointer-events: none; }
+      #death { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 4px;
+        font: 15px system-ui, sans-serif; color: #fff; background: rgba(20,10,5,0.45); pointer-events: none; }
+      #death[hidden] { display: none; }
+      #death h2 { margin: 0 0 8px; font-size: 28px; }
+      #death p { margin: 2px; }
+      #death .go { margin-top: 14px; opacity: 0.85; }
       #help { position: fixed; left: 16px; bottom: 12px; font: 12px/1.4 system-ui, sans-serif; color: #2b2118;
         background: rgba(255,255,255,0.45); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
     </style>
   </head>
   <body>
-    <div id="hud"></div>
-    <div id="help">WASD move · Shift sprint · drag to look · C camera behind · or a controller</div>
+    <div id="bars"></div>
+    <div id="prompt"></div>
+    <div id="death" hidden></div>
+    <div id="help">WASD move · Shift sprint · G drink · E eat · drag to look · C camera behind · or a controller</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

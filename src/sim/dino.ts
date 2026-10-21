@@ -1,5 +1,6 @@
 import { clamp, damp, lerp, smooth, wrapAngle } from './math';
-import { gradeAlong, heightAt, MAP_RADIUS } from './terrain';
+import { gradeAlong, heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
+import { fullNeeds, type Needs } from './needs';
 import type { Species } from './species';
 
 // What a player (or AI, or remote client) asks for this tick. World-space, so the
@@ -8,9 +9,14 @@ export interface Command {
   moveX: number; // desired heading, world x (east)
   moveZ: number; // desired heading, world z; |(moveX, moveZ)| is stick strength 0..1
   sprint: number; // 0..1 trigger
+  drink?: boolean; // held
+  eat?: boolean; // held
+  respawn?: boolean; // pressed, only read while dead
 }
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
+
+export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat';
 
 export interface Dino {
   species: Species;
@@ -23,25 +29,50 @@ export interface Dino {
   accel: number;
   grade: number;
   stamina: number; // 0..1
+  needs: Needs;
+  act: Act;
+  alive: boolean;
+  age: number; // s alive
 }
 
 export function createDino(species: Species, x: number, z: number, yaw: number): Dino {
-  return { species, x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1 };
+  return {
+    species, x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0,
+  };
+}
+
+// Steering the world hands the controller instead of the stick: turn toward a
+// point, then creep up to it (drinking, eating).
+export interface Override {
+  yaw: number;
+  target: number; // speed, m/s
+  turnCap: number; // rad/s
+  steer: boolean;
 }
 
 // Movement controller ported from the Dlist demo (gait tuning lessons dlist/E2-E6).
-export function stepDino(d: Dino, cmd: Command, dt: number): void {
+export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void {
   const sp = d.species;
-  const mag = Math.min(1, Math.hypot(cmd.moveX, cmd.moveZ));
-  let target = 0;
-  let desiredYaw = d.yaw;
-  const steer = mag > 0.02;
-  if (steer) {
-    desiredYaw = Math.atan2(cmd.moveX, cmd.moveZ);
-    target = cmd.sprint > 0.25
-      ? lerp(sp.sprintMin, sp.sprintMax, cmd.sprint) * Math.max(mag, 0.65)
-      : sp.walk * mag;
+  let target = 0, desiredYaw = d.yaw, steer = false, turnCap = 9;
+  if (!d.alive) {
+    steer = false;
+  } else if (ov) {
+    ({ yaw: desiredYaw, target, turnCap, steer } = ov);
+  } else {
+    const mag = Math.min(1, Math.hypot(cmd.moveX, cmd.moveZ));
+    if (mag > 0.02) {
+      steer = true;
+      desiredYaw = Math.atan2(cmd.moveX, cmd.moveZ);
+      target = cmd.sprint > 0.25
+        ? lerp(sp.sprintMin, sp.sprintMax, cmd.sprint) * Math.max(mag, 0.65)
+        : sp.walk * mag;
+    }
   }
+
+  // Wading slows it, up to about half speed at hip depth.
+  const depth = waterDepthAt(d.x, d.z);
+  target *= 1 - clamp(depth / 1.2, 0, 1) * 0.55;
 
   // Hills: climbing costs work against gravity, so the slowdown scales with grade.
   // Gentle downhill helps a little; steep downhill has to be braked.
@@ -54,23 +85,30 @@ export function stepDino(d: Dino, cmd: Command, dt: number): void {
 
   // Turn rate falls with speed: 2.7 rad/s standing, 1.35 at a full sprint.
   const dy = wrapAngle(desiredYaw - d.yaw);
-  const maxTurn = lerp(2.7, 1.35, clamp(d.speed / sp.sprintMax, 0, 1));
+  const maxTurn = Math.min(turnCap, lerp(2.7, 1.35, clamp(d.speed / sp.sprintMax, 0, 1)));
   const turn = steer ? clamp(dy, -maxTurn * dt, maxTurn * dt) : 0;
   d.yaw = wrapAngle(d.yaw + turn);
   d.yawRate = damp(d.yawRate, turn / dt, 8, dt);
-  if (Math.abs(dy) > 1.7) target *= 0.35; // reversing: slow down and come round
+  if (Math.abs(dy) > 1.7 && !ov) target *= 0.35; // reversing: slow down and come round
 
   // Acceleration is capped by what the feet can carry (2.1 m/s^2 up to 5 m/s, 1.2 near 7); braking 4 m/s^2.
   const prev = d.speed;
   const up = lerp(2.1, 1.2, smooth(5, 7, d.speed));
-  d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - 4 * dt);
+  d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - (d.alive ? 4 : 9) * dt);
   d.accel = damp(d.accel, (d.speed - prev) / dt, 6, dt);
 
   const sprinting = d.speed > 5 && cmd.sprint > 0.25;
-  d.stamina = clamp(d.stamina + (sprinting ? -0.02 : 0.11) * dt, 0, 1);
+  if (d.alive) d.stamina = clamp(d.stamina + (sprinting ? -0.02 : 0.11) * dt, 0, 1);
 
-  let nx = d.x + Math.sin(d.yaw) * d.speed * dt;
-  let nz = d.z + Math.cos(d.yaw) * d.speed * dt;
+  const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw);
+  let nx = d.x + fx * d.speed * dt;
+  let nz = d.z + fz * d.speed * dt;
+  // Won't wade in over its depth: it pulls up at the edge.
+  if (waterDepthAt(nx, nz) > TOO_DEEP || waterDepthAt(nx + fx * 1.6, nz + fz * 1.6) > TOO_DEEP + 0.1) {
+    d.speed = Math.max(0, d.speed - 12 * dt);
+    nx = d.x;
+    nz = d.z;
+  }
   // Soft map edge until the world has real bounds.
   const r = Math.hypot(nx, nz);
   if (r > MAP_RADIUS) {
@@ -81,3 +119,5 @@ export function stepDino(d: Dino, cmd: Command, dt: number): void {
   d.z = nz;
   d.y = heightAt(nx, nz);
 }
+
+export const isSprinting = (d: Dino, cmd: Command): boolean => d.speed > 5 && cmd.sprint > 0.25;

@@ -7,6 +7,9 @@ export interface Species {
   walk: number; // full-stick speed without sprint, m/s
   sprintMin: number; // sprint speed at a light trigger press
   sprintMax: number; // top speed, m/s
+  reach: number; // how far from the hips it notices water to drink, m
+  snout: number; // hips to lowered snout, m
+  meat: number; // kg of meat its own carcass holds
 }
 
 export const HERRERASAURUS: Species = {
@@ -17,4 +20,7 @@ export const HERRERASAURUS: Species = {
   walk: 3.4,
   sprintMin: 3.6,
   sprintMax: 7.4,
+  reach: 2.8,
+  snout: 1.8,
+  meat: 140,
 };

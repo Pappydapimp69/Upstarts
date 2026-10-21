@@ -12,6 +12,8 @@ export class DinoMesh {
   private readonly legs: { hip: THREE.Group; knee: THREE.Group }[] = [];
   private phase = 0;
   private sprintBlend = 0;
+  private headDown = 0;
+  private dead = 0;
 
   constructor(private readonly sp: Species) {
     const skin = new THREE.MeshStandardMaterial({ color: 0x7a6248, roughness: 0.9 });
@@ -63,7 +65,8 @@ export class DinoMesh {
     }
   }
 
-  update(x: number, y: number, z: number, yaw: number, speed: number, accel: number, grade: number, dt: number): void {
+  update(x: number, y: number, z: number, yaw: number, speed: number, accel: number, grade: number, dt: number,
+    feeding = false, alive = true): void {
     this.root.position.set(x, y, z);
     this.root.rotation.y = yaw;
 
@@ -85,7 +88,16 @@ export class DinoMesh {
     const bob = Math.abs(Math.sin(this.phase * Math.PI * 2)) * 0.04 * moving;
     this.body.position.y = this.sp.hip - 0.19 * s + bob;
     this.body.rotation.x = -0.05 * (1 - s) + 0.12 * s - clamp(grade, -0.4, 0.4) * 0.5 + clamp(accel, -4, 4) * 0.02;
-    this.neck.rotation.x = -0.35 * (1 - s) + 0.35 * s;
+    // Head down to drink or eat: the neck swings the snout to the ground ahead.
+    this.headDown = damp(this.headDown, feeding ? 1 : 0, 5, dt);
+    const sip = feeding ? Math.max(0, Math.sin(performance.now() / 1000 * Math.PI * 2 / 2.3)) * 0.25 : 0;
+    this.neck.rotation.x = (-0.35 * (1 - s) + 0.35 * s) * (1 - this.headDown) + (1.25 - sip) * this.headDown;
+    // Dead: rolled onto its side.
+    this.dead = damp(this.dead, alive ? 0 : 1, 3, dt);
+    this.root.rotation.z = this.dead * Math.PI / 2;
+    // Rolling 90° about the long axis swings the hip-high body out sideways to ground level;
+    // lift it by the trunk's half-width so it lies on the ground, not in it.
+    this.root.position.y = y + this.dead * 0.38;
     this.tail.rotation.x = 0.24 * (1 - s) - 0.12 * s;
   }
 }

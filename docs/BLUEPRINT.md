@@ -1,6 +1,6 @@
 # Upstarts — Game Blueprint
 
-Status: **M0 built** (project setup). Game code lives in this repo; the demo and
+Status: **M2 built** (survive: drink, eat, stats, death and respawn). Game code lives in this repo; the demo and
 tutorial live in [Dlist](https://github.com/Pappydapimp69/Dlist). Everything below is a proposal until
 marked **LOCKED**. Items marked **YOUR CALL** need a decision from you.
 

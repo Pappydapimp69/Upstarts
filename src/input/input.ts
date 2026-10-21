@@ -9,15 +9,20 @@ export interface RawInput {
   dragX: number; // mouse drag pixels since last read
   dragY: number;
   recenter: boolean;
+  drink: boolean; // held
+  eat: boolean; // held
+  confirm: boolean; // pressed
 }
 
 const keys = new Set<string>();
-let dragX = 0, dragY = 0, dragging = false, recenter = false;
+let dragX = 0, dragY = 0, dragging = false, recenter = false, confirm = false;
+let padConfirmWas = false;
 
 export function initInput(canvas: HTMLElement): void {
   window.addEventListener('keydown', (e) => {
     keys.add(e.code);
     if (e.code === 'KeyC') recenter = true;
+    if ((e.code === 'Enter' || e.code === 'Space') && !e.repeat) confirm = true;
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   window.addEventListener('blur', () => keys.clear());
@@ -41,6 +46,7 @@ export function readInput(): RawInput {
   let moveR = k('KeyD') + k('ArrowRight') - k('KeyA') - k('ArrowLeft');
   let sprint = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : 0;
   let lookX = 0, lookY = 0;
+  let drink = keys.has('KeyG'), eat = keys.has('KeyE');
 
   const pad = navigator.getGamepads?.().find((p) => p && p.connected);
   if (pad) {
@@ -53,6 +59,11 @@ export function readInput(): RawInput {
     lookY = dead(pad.axes[3] ?? 0);
     sprint = Math.max(sprint, pad.buttons[7]?.value ?? 0); // right trigger
     if (pad.buttons[11]?.pressed) recenter = true; // right stick click
+    drink ||= !!pad.buttons[1]?.pressed; // B (hold)
+    eat ||= !!pad.buttons[2]?.pressed; // X (hold)
+    const a = !!pad.buttons[0]?.pressed; // A
+    if (a && !padConfirmWas) confirm = true;
+    padConfirmWas = a;
   }
 
   const m = Math.hypot(moveF, moveR);
@@ -60,8 +71,8 @@ export function readInput(): RawInput {
     moveF /= m;
     moveR /= m;
   }
-  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter };
+  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, confirm };
   dragX = dragY = 0;
-  recenter = false;
+  recenter = confirm = false;
   return out;
 }

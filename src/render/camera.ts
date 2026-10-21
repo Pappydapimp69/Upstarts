@@ -20,6 +20,12 @@ export class FollowCamera {
     this.target.set(x, y + 1.4, z);
   }
 
+  snapBehind(d: { x: number; y: number; z: number; yaw: number }): void {
+    this.yaw = d.yaw + Math.PI;
+    this.target.set(d.x, d.y + 1.4, d.z);
+    this.recentering = false;
+  }
+
   // Camera-relative stick to a world-space command.
   command(inp: RawInput): Command {
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
@@ -28,6 +34,9 @@ export class FollowCamera {
       moveX: fx * inp.moveF + rx * inp.moveR,
       moveZ: fz * inp.moveF + rz * inp.moveR,
       sprint: inp.sprint,
+      drink: inp.drink,
+      eat: inp.eat,
+      respawn: inp.confirm,
     };
   }
 
