@@ -1,6 +1,7 @@
 import { clamp, damp, lerp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
+import { pushOutOfTrees } from './flora';
 
 // Hyperodapedon: beaked rhynchosaur, the most common animal in the valley and
 // the main prey. Herding and the numbers below are game design informed by the
@@ -211,6 +212,7 @@ export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds:
     nx *= MAP_RADIUS / r;
     nz *= MAP_RADIUS / r;
   }
+  [nx, nz] = pushOutOfTrees(nx, nz, 0.4);
   h.x = nx;
   h.z = nz;
 }

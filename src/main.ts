@@ -2,10 +2,11 @@ import { createWorld, step, TICK_DT, CARCASS } from './sim/world';
 import { lerp, wrapAngle } from './sim/math';
 import { heightAt, waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
-import { DinoMesh } from './render/dinoMesh';
+import { HerreraAnimator } from './render/dlist/animator.js';
+import { isSprinting } from './sim/dino';
 import { FollowCamera } from './render/camera';
-import { buildWater, CarcassMeshes } from './render/worldMeshes';
-import { Hud } from './render/hud';
+import { CarcassMeshes } from './render/worldMeshes';
+import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { SauroMeshes } from './render/sauroMesh';
 import { initInput, readInput } from './input/input';
@@ -14,7 +15,6 @@ import { initInput, readInput } from './input/input';
 const params = new URLSearchParams(location.search);
 const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0);
 const view = new SceneView(document.body);
-view.scene.add(buildWater());
 const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
 const herbMeshes = new HerbivoreMeshes();
@@ -23,11 +23,16 @@ const sauroMeshes = new SauroMeshes();
 view.scene.add(sauroMeshes.group);
 
 let p = world.player;
-let dinoMesh = new DinoMesh(p.species);
-view.scene.add(dinoMesh.root);
+// The Dlist demo's Herrerasaurus. One model, re-planted for each new hatchling.
+const herrera = new HerreraAnimator();
+view.scene.add(herrera.root);
+herrera.plant(p.x, p.z, p.yaw, p.body.size);
 const cam = new FollowCamera(view.camera, p.yaw, p.x, p.y, p.z);
 initInput(view.renderer.domElement);
-const hud = new Hud(document.body);
+const ui = new Ui();
+// The game waits on the splash until the player hatches; the menu button pauses it.
+let started = false, paused = false;
+ui.showIntro(true);
 
 // Fixed-step sim, free-running render, interpolated between the last two ticks.
 let prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
@@ -53,7 +58,24 @@ function frame(now: number): void {
   last = now;
   acc += dt;
   const inp = readInput();
-  const cmd = cam.command(inp);
+  if (!started) {
+    if (inp.confirm) {
+      started = true;
+      ui.showIntro(false);
+    }
+    acc = 0;
+  } else if (paused) {
+    if (inp.confirm || inp.menu) {
+      paused = false;
+      ui.showPause(false);
+    }
+    acc = 0;
+  } else if (inp.menu) {
+    paused = true;
+    ui.showPause(true);
+  }
+  const live = started && !paused;
+  const cmd = cam.command(live ? inp : { ...inp, moveF: 0, moveR: 0, sprint: 0, drink: false, eat: false, confirm: false });
   while (acc >= TICK_DT) {
     prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
     herbMeshes.beforeTick(world.herbivores);
@@ -64,9 +86,7 @@ function frame(now: number): void {
     if (world.player !== p) {
       // Hatched again: fresh body, camera behind it.
       p = world.player;
-      view.scene.remove(dinoMesh.root);
-      dinoMesh = new DinoMesh(p.species);
-      view.scene.add(dinoMesh.root);
+      herrera.plant(p.x, p.z, p.yaw, p.body.size);
       prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
       cam.snapBehind(p);
     }
@@ -75,11 +95,17 @@ function frame(now: number): void {
   const x = lerp(prev.x, p.x, a), y = lerp(prev.y, p.y, a), z = lerp(prev.z, p.z, a);
   const yaw = prev.yaw + wrapAngle(p.yaw - prev.yaw) * a;
 
-  const feeding = p.act === 'drink' || p.act === 'eat';
-  dinoMesh.update(x, y, z, yaw, p.speed, p.accel, p.grade, dt, feeding, p.alive, p.biteT, p.act === 'sniff', p.body.size);
+  // Snout target when eating: the top of the nearest carcass.
+  let dipY: number | undefined;
+  if (p.act === 'eat') {
+    const c = world.carcasses.reduce((b, k) => (Math.hypot(k.x - p.x, k.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? k : b), world.carcasses[0]);
+    if (c) dipY = heightAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
+  }
+  herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
+    biteT: p.biteT, sprinting: isSprinting(p, cmd), size: p.body.size, dipY }, dt);
   herbMeshes.update(world.herbivores, a, dt);
   sauroMeshes.update(world.sauros, a, dt);
-  carcassMeshes.sync(world.carcasses, heightAt);
+  carcassMeshes.sync(world.carcasses, heightAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);
   // Saurosuchus bodies (head to tail) block the camera.
   const blockers = world.sauros.map((s) => {
     const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), gy = heightAt(s.x, s.z) + 1.0;
@@ -87,9 +113,9 @@ function frame(now: number): void {
   });
   cam.update(inp, dt, { x, y, z, yaw, speed: p.speed }, p.body.size, p.alive && p.hitT < 0.25 ? 1 - p.hitT / 0.25 : 0, blockers);
   view.followSun(x, y, z);
-  view.render();
+  view.render(dt);
   const near = nearby();
-  hud.update(world, near.water, near.food, near.prey, cam.yaw);
+  ui.update(world, near, cam.yaw);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

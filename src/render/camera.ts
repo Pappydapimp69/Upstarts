@@ -75,7 +75,7 @@ export class FollowCamera {
     this.target.z = damp(this.target.z, dino.z, 12, dt);
     this.target.y = damp(this.target.y, dino.y + 1.4 * size, 6, dt);
     // Pull in for a small animal, out for a big one.
-    this.dist = damp(this.dist, 6.6 * (0.45 + 0.55 * size), 2, dt);
+    this.dist = damp(this.dist, 6.6 * (0.2 + 0.8 * size), 2, dt);
 
     const c = this.camera;
     c.position.set(
@@ -96,7 +96,7 @@ export class FollowCamera {
         break;
       }
     }
-    c.position.y = Math.max(c.position.y, heightAt(c.position.x, c.position.z) + 0.45);
+    c.position.y = Math.max(c.position.y, heightAt(c.position.x, c.position.z) + 0.45 * Math.max(size, 0.4));
     // A jolt when bitten (skipped for reduced motion).
     if (jolt > 0 && !matchMedia('(prefers-reduced-motion: reduce)').matches) c.position.y -= jolt * 0.25;
     c.lookAt(this.target.x, this.target.y + 0.2, this.target.z);

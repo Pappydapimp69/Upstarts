@@ -2,6 +2,7 @@ import { clamp, damp, lerp, smooth, wrapAngle } from './math';
 import { gradeAlong, heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { fullNeeds, type Needs } from './needs';
 import { bodyOf, type Body } from './growth';
+import { pushOutOfTrees } from './flora';
 import type { Species } from './species';
 
 // What a player (or AI, or remote client) asks for this tick. World-space, so the
@@ -121,6 +122,7 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
     nx *= MAP_RADIUS / r;
     nz *= MAP_RADIUS / r;
   }
+  [nx, nz] = pushOutOfTrees(nx, nz, 0.45 * sp.size);
   d.x = nx;
   d.z = nz;
   d.y = heightAt(nx, nz);

@@ -16,6 +16,14 @@ export interface Pond {
 }
 export const PONDS: Pond[] = [{ x: 15, z: -9, r: 11, depth: 1.7, flat: 11 }];
 
+// Where new animals hatch. Kept clear of trees.
+export const SPAWNS = [
+  { x: 0, z: 15, yaw: Math.PI },
+  { x: -18, z: -12, yaw: 0.6 },
+  { x: 22, z: 20, yaw: -2.4 },
+  { x: -6, z: -30, yaw: 0.2 },
+];
+
 export function heightAt(x: number, z: number): number {
   const r = Math.hypot(x, z);
   let h = 0.42 + (fbm(x * 0.03, z * 0.03, 1) - 0.5) * 1.6 + (fbm(x * 0.11, z * 0.11, 5) - 0.5) * 0.35;

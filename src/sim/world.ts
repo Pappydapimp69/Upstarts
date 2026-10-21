@@ -2,7 +2,7 @@
 // in a Web Worker or on a server unchanged (blueprint D2, D7).
 import { createDino, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
 import { NEEDS, stepNeeds } from './needs';
-import { heightAt, waterDepthAt } from './terrain';
+import { heightAt, SPAWNS, waterDepthAt } from './terrain';
 import { HERRERASAURUS } from './species';
 import { wrapAngle } from './math';
 import { rng } from './rng';
@@ -15,12 +15,7 @@ import { bodyOf, GROWTH } from './growth';
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
 
-export const SPAWNS = [
-  { x: 0, z: 15, yaw: Math.PI },
-  { x: -18, z: -12, yaw: 0.6 },
-  { x: 22, z: 20, yaw: -2.4 },
-  { x: -6, z: -30, yaw: 0.2 },
-];
+export { SPAWNS } from './terrain';
 
 export const CARCASS = {
   start: 6, // placed at the start
@@ -67,6 +62,7 @@ export interface Death {
   age: number; // s it lived
   growth: number;
   cause: 'hunger' | 'thirst' | 'Saurosuchus';
+  carcassId: number; // its own body, lying where it fell
 }
 
 export interface World {
@@ -213,9 +209,9 @@ function killPlayer(w: World, cause: Death['cause']): void {
   d.alive = false;
   d.act = 'none';
   d.needs.health = 0;
-  w.lastDeath = { age: d.age, growth: d.growth, cause };
   // Its body stays in the world as a carcass others can eat, from the moment it dies.
   placeCarcassAt(w, d.x, d.z, d.yaw, d.body.meat);
+  w.lastDeath = { age: d.age, growth: d.growth, cause, carcassId: w.carcasses[w.carcasses.length - 1].id };
 }
 
 // Turn to face a point, creep up until the lowered snout is over it, then act.

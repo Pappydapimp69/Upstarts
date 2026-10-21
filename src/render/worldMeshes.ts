@@ -1,18 +1,5 @@
 import * as THREE from 'three';
-import { PONDS, WATER_Y } from '../sim/terrain';
 import type { Carcass } from '../sim/world';
-
-export function buildWater(): THREE.Group {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x5c8a96, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82 });
-  for (const p of PONDS) {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(p.r + 2, 48), mat);
-    m.rotation.x = -Math.PI / 2;
-    m.position.set(p.x, WATER_Y, p.z);
-    g.add(m);
-  }
-  return g;
-}
 
 // Greybox carcass: a body on its side with ribs showing, shrinking as it's eaten or rots.
 export class CarcassMeshes {
@@ -42,9 +29,11 @@ export class CarcassMeshes {
     return g;
   }
 
-  sync(carcasses: Carcass[], heightAt: (x: number, z: number) => number): void {
+  // hideId: a carcass drawn by something else (the player's own body while the death screen is up).
+  sync(carcasses: Carcass[], heightAt: (x: number, z: number) => number, hideId = -1): void {
     const live = new Set<number>();
     for (const c of carcasses) {
+      if (c.id === hideId) continue;
       live.add(c.id);
       let g = this.meshes.get(c.id);
       if (!g) {

@@ -22,6 +22,12 @@ WASD move · Shift sprint · hold G drink (or sniff away from water) · hold E e
 Controller: left stick, RT sprint, hold B drink/sniff, hold X eat/bite, A to hatch again.
 Add `?fast` to the URL to run hunger, thirst and growth 20x faster, and `?adult` to start fully grown.
 
+## Look
+
+The environment, Herrerasaurus model and animation, and the HUD come from the Dlist demo
+(`demos/skin-test`), ported into `src/render/dlist/` and `index.html`. three.js is pinned to
+0.160, the demo's version: on 0.169 the fuzz shader compiles but renders the wrong colour.
+
 ## Layout
 
 - `src/sim/`: game state and rules. No Three.js or DOM, so it can move to a

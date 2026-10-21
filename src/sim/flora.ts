@@ -1,0 +1,64 @@
+import { lerp } from './math';
+import { rng } from './rng';
+import { heightAt, PONDS, SPAWNS } from './terrain';
+
+// Trees are solid, so where they stand is part of the sim: a fixed seed, the same
+// for every player. Layout and counts follow the Dlist demo's valley.
+export type TreeKind = 'conifer' | 'dicroidium';
+export interface Tree {
+  kind: TreeKind;
+  x: number;
+  z: number;
+  y: number; // base height
+  s: number; // scale
+  ry: number;
+  r: number; // trunk collision radius, m
+}
+
+function clearOf(x: number, z: number, pad: number): boolean {
+  if (PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + pad)) return false;
+  if (SPAWNS.some((p) => Math.hypot(x - p.x, z - p.z) < 6)) return false;
+  return true;
+}
+
+function build(): Tree[] {
+  const R = rng(20251020);
+  const ring = (rMin: number, rMax: number): [number, number] => {
+    const a = R() * Math.PI * 2, r = Math.sqrt(lerp(rMin * rMin, rMax * rMax, R()));
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  };
+  const out: Tree[] = [];
+  // Conifers on the outer ring.
+  let n = 0;
+  for (let i = 0; i < 600 && n < 44; i++) {
+    const [x, z] = ring(n < 6 ? 20 : 30, 74);
+    if (!clearOf(x, z, 6) || out.some((o) => Math.hypot(o.x - x, o.z - z) < 5)) continue;
+    const s = lerp(0.8, 1.35, R());
+    out.push({ kind: 'conifer', x, z, y: heightAt(x, z) - 0.2, s, ry: R() * 6.28, r: 0.42 * s + 0.1 });
+    n++;
+  }
+  // Dicroidium: the signature seed fern of the Triassic southern continents.
+  n = 0;
+  for (let i = 0; i < 600 && n < 22; i++) {
+    const [x, z] = ring(12, 46);
+    if (!clearOf(x, z, 3.5) || out.some((o) => Math.hypot(o.x - x, o.z - z) < 4)) continue;
+    const s = lerp(0.85, 1.3, R());
+    out.push({ kind: 'dicroidium', x, z, y: heightAt(x, z) - 0.1, s, ry: R() * 6.28, r: 0.2 * s + 0.1 });
+    n++;
+  }
+  return out;
+}
+
+export const TREES: Tree[] = build();
+
+// Push a circle of radius rad out of any trunk it overlaps. Returns the corrected position.
+export function pushOutOfTrees(x: number, z: number, rad: number): [number, number] {
+  for (const t of TREES) {
+    const dx = x - t.x, dz = z - t.z, d = Math.hypot(dx, dz), min = t.r + rad;
+    if (d < min && d > 1e-6) {
+      x = t.x + (dx / d) * min;
+      z = t.z + (dz / d) * min;
+    }
+  }
+  return [x, z];
+}

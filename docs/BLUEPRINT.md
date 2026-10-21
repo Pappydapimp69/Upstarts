@@ -1,6 +1,7 @@
 # Upstarts — Game Blueprint
 
-Status: **M4 built** (fight and grow: size-scaled bites, hatchling to adult, Saurosuchus). Game code lives in this repo; the demo and
+Status: **M4 built**, **M5 under way**: the Dlist demo's environment, Herrerasaurus model and
+animation, and UI are ported in (Hyperodapedon and Saurosuchus are still greybox). Game code lives in this repo; the demo and
 tutorial live in [Dlist](https://github.com/Pappydapimp69/Dlist). Everything below is a proposal until
 marked **LOCKED**. Items marked **YOUR CALL** need a decision from you.
 

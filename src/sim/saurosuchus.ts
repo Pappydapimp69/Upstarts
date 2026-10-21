@@ -1,6 +1,7 @@
 import { clamp, damp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
+import { pushOutOfTrees } from './flora';
 
 // Saurosuchus: the apex predator, a big crocodile-line archosaur. Rare, roams a
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
@@ -260,6 +261,7 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
     nx *= MAP_RADIUS / r;
     nz *= MAP_RADIUS / r;
   }
+  [nx, nz] = pushOutOfTrees(nx, nz, 0.9);
   s.x = nx;
   s.z = nz;
 }
