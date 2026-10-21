@@ -17,7 +17,7 @@ const noSauro = (w: World): World => {
 
 // Stand the player on the shore, facing away from the water.
 function onShore(w: World, facingWater: boolean): void {
-  const x = pond.x, z = pond.z + pond.r + 1.2;
+  const x = pond.x, z = pond.z + pond.r + 0.9;
   w.player = createDino(HERRERASAURUS, x, z, facingWater ? Math.PI : 0);
 }
 

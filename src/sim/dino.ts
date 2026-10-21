@@ -1,5 +1,5 @@
 import { clamp, damp, lerp, smooth, wrapAngle } from './math';
-import { gradeAlong, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
+import { gradeAlong, MAP_RADIUS, TOO_DEEP, WATER_Y, waterDepthAt } from './terrain';
 import { groundAt, groundInfo, mudDepthAt, surfaceAt, TIER } from './ground';
 import { newCoat, soak, stepCoat, type Coat } from './coat';
 import { footCheck, startFall, stepFall, type Fall } from './balance';
@@ -64,7 +64,18 @@ export interface Dino {
   fall: Fall | null; // a slip, stumble or trip in progress
   fallThud: boolean; // the tick a trip's body hit the ground
   fallStart: Fall | null; // the fall that started this tick, for its sound
+  swim: number; // 0 on its feet .. 1 afloat (swimmers only)
+  under: number; // afloat and lying low, only eyes and nostrils out: 0 .. 1
+  chill: number; // a cold-blooded animal at night: 0 warm .. 1 cold and sluggish (set by the world)
+  lungeT: number; // s since an ambush lunge from the water began (9: none)
+  grip: number; // a water ambusher holding on to what it bit (entity id), -1 none
 }
+
+// Afloat once the water is this deep against its hip (a swimmer); wading below that.
+// An ambush lunge from lying low in the water (crocodile-style): a fraction of a second at several times swimming speed,
+// still low in the water, then the normal burst. It costs stamina and needs a few seconds to set up again.
+export const SWIM = { float: 0.7, burst: 1.8, sit: 0.55, lunge: 3.5, lungeFor: 0.5, lungeCost: 0.12, lungeEvery: 3 };
+export const swimming = (d: Dino): boolean => d.species.swim > 0 && waterDepthAt(d.x, d.z) > SWIM.float * d.body.hip;
 
 // A leap (Dlist demo): a short crouch, then a ballistic arc, heavier on the way down.
 export interface Jump {
@@ -90,7 +101,7 @@ export function createDino(species: Species, x: number, z: number, yaw: number, 
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: groundAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
     needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, egg: 0,
-    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null,
+    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null, swim: 0, under: 0, chill: 0, lungeT: 9, grip: -1,
   };
 }
 
@@ -147,8 +158,19 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   }
 
   // Wading slows it, up to about half speed at hip depth.
-  const depth = waterDepthAt(d.x, d.z);
-  target *= 1 - clamp(depth / 1.2, 0, 1) * 0.55;
+  const depth = waterDepthAt(d.x, d.z), afloat = swimming(d);
+  if (afloat && !ov && d.alive) {
+    // Swimming: a tail-driven cruise, a short burst on the trigger (it costs stamina like a sprint).
+    const mag = Math.min(1, Math.hypot(cmd.moveX, cmd.moveZ)), vs = d.species.swim * Math.sqrt(sp.size);
+    if (d.under > 0.6 && cmd.sprint > 0.25 && mag > 0.2 && d.lungeT > SWIM.lungeEvery && d.stamina > SWIM.lungeCost) {
+      d.lungeT = 0;
+      d.stamina -= SWIM.lungeCost;
+    }
+    target = mag > 0.02 ? vs * mag * (cmd.sprint > 0.25 && d.stamina > 0.05 ? lerp(1, SWIM.burst, cmd.sprint) : 1) : 0;
+    if (d.lungeT < SWIM.lungeFor) target = vs * SWIM.lunge;
+  } else target *= 1 - clamp(depth / 1.2, 0, 1) * 0.55;
+  // Cold-blooded at night: slow (its muscles are only as warm as the air).
+  target *= 1 - 0.3 * d.chill;
   // Mud drags at the legs: up to half speed with it at three quarters of the hip (demo: 0.85 m on an adult).
   target *= 1 - clamp(mudDepthAt(d.x, d.z) / (0.74 * sp.hip), 0, 1) * 0.5;
   // Badly hurt, it limps: down to 60% speed at the edge of death (the Dlist demo's limp, below 30%).
@@ -174,7 +196,8 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   // Acceleration is capped by what the feet can carry (2.1 m/s^2 up to 5 m/s, 1.2 near 7); braking 4 m/s^2.
   const prev = d.speed;
   const up = lerp(2.1, 1.2, smooth(5, 7, d.speed));
-  if (d.jump?.ph !== 'air') d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - (d.alive && !d.fall?.down ? 4 : 9) * dt); // down, it skids to a stop
+  if (d.lungeT < SWIM.lungeFor) d.speed = target; // the lunge is explosive
+  else if (d.jump?.ph !== 'air') d.speed = d.speed < target ? Math.min(target, d.speed + up * dt) : Math.max(target, d.speed - (d.alive && !d.fall?.down ? 4 : 9) * dt); // down, it skids to a stop
   d.accel = damp(d.accel, (d.speed - prev) / dt, 6, dt);
 
   const sprinting = isSprinting(d, cmd);
@@ -182,16 +205,18 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   if (d.resting) d.resting = !!cmd.rest && d.alive;
   else if (cmd.rest && d.alive && !d.jump && !d.fall && !ov && d.speed < 0.6) d.resting = true;
   d.rest = damp(d.rest, d.resting ? 1 : 0, d.resting ? 2.2 : 3.5, dt);
-  if (cmd.jump && d.alive && !d.jump && !d.fall && !ov && !d.resting && d.rest < 0.3) startJump(d);
+  // Four legs don't jump (owner); nothing jumps out of deep water.
+  if (cmd.jump && d.alive && d.species.plan === 'biped' && !afloat && !d.jump && !d.fall && !ov && !d.resting && d.rest < 0.3) startJump(d);
   stepJump(d, dt);
 
-  if (d.alive) d.stamina = clamp(d.stamina + (sprinting ? STAMINA.sprint : d.jump ? 0 : d.rest > 0.8 ? STAMINA.rest : STAMINA.walk) * dt, 0, 1);
+  const bursting = afloat && cmd.sprint > 0.25 && d.speed > d.species.swim * Math.sqrt(sp.size) * 1.05;
+  if (d.alive) d.stamina = clamp(d.stamina + (sprinting || bursting ? STAMINA.sprint : d.jump ? 0 : d.rest > 0.8 ? STAMINA.rest : STAMINA.walk) * dt, 0, 1);
 
   const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw);
   let nx = d.x + fx * d.speed * dt;
   let nz = d.z + fz * d.speed * dt;
   // Won't wade in over its depth: it pulls up at the edge.
-  if (waterDepthAt(nx, nz) > TOO_DEEP || waterDepthAt(nx + fx * 1.6, nz + fz * 1.6) > TOO_DEEP + 0.1) {
+  if (d.species.swim <= 0 && (waterDepthAt(nx, nz) > TOO_DEEP || waterDepthAt(nx + fx * 1.6, nz + fz * 1.6) > TOO_DEEP + 0.1)) {
     d.speed = Math.max(0, d.speed - 12 * dt);
     nx = d.x;
     nz = d.z;
@@ -205,8 +230,20 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   [nx, nz] = pushOutOfTrees(nx, nz, 0.45 * sp.size);
   d.scrambled = 0;
   d.jumpLanded = footing(d, nx, nz, cmd, ov);
+  // Afloat it rides at the surface, most of the body under; still in the water, it sinks until only the eyes show.
+  // A lunge comes from low in the water and stays low until it is over.
+  const nowAfloat = swimming(d);
+  d.lungeT += dt;
+  d.swim = damp(d.swim, nowAfloat ? 1 : 0, 4, dt);
+  if (d.lungeT >= SWIM.lungeFor) d.under = damp(d.under, nowAfloat && d.speed < 0.4 && d.act === 'none' ? 1 : 0, d.under < 0.5 ? 0.8 : 3, dt);
+  if (nowAfloat) {
+    d.y = WATER_Y - SWIM.sit * sp.hip;
+    d.air = 0;
+    d.jump = null;
+    d.resting = false;
+  }
   if (d.alive) {
-    const wd = waterDepthAt(d.x, d.z), md = mudDepthAt(d.x, d.z);
+    const wd = waterDepthAt(d.x, d.z) + (nowAfloat ? sp.hip * (0.3 + 0.9 * d.under) : 0), md = mudDepthAt(d.x, d.z);
     // Coming down in water or mud throws it up the body, higher the harder it lands (demo jumpLand).
     if (d.jumpLanded > 0 && (wd > 0 || md > 0)) {
       const imp = clamp(d.jumpLanded / 5, 0, 1.3), k = sp.hip / 1.15;
@@ -248,7 +285,15 @@ export function footfall(d: Dino, side: number, stride: number, sprinting: boole
 // A drop bigger than a step: pushing on, it steps off and falls; with the stick let go it stops at the edge.
 // Returns the landing speed on the tick it comes down from a jump or a fall, else 0.
 function footing(d: Dino, nx: number, nz: number, cmd: Command, ov?: Override): number {
-  const hip = d.body.hip, stepH = TIER.step * hip, feet = d.y - d.air;
+  const hip = d.body.hip, stepH = TIER.step * hip;
+  // Afloat, the bottom is no obstacle; coming ashore it climbs out onto whatever the bank is.
+  if (d.species.swim > 0 && waterDepthAt(nx, nz) > SWIM.float * hip) {
+    d.x = nx;
+    d.z = nz;
+    d.air = 0;
+    return 0;
+  }
+  const feet = d.species.swim > 0 && waterDepthAt(d.x, d.z) > SWIM.float * hip ? groundAt(nx, nz) : d.y - d.air;
   const j = d.jump;
   if (j?.ph === 'air') {
     // In the air the feet clear anything below them; a face above the scramble height stops it dead.

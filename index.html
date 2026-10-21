@@ -113,8 +113,8 @@
       .card button:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
       .hint { margin: 0; color: var(--ink-3); font-size: 0.78rem; }
       /* Species picker (on the splash and the death card), in the style of the demo's map picker. */
-      .card.wide { width: min(760px, 100%); }
-      .species { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .card.wide { width: min(900px, 100%); }
+      .species { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
       .card .sp { justify-self: stretch; display: grid; gap: 4px; align-content: start; text-align: left; padding: 10px 12px; border-radius: 6px;
         border: 1px solid var(--line); background: rgba(239, 230, 214, 0.04); color: var(--ink); cursor: pointer; }
       .card .sp.on { border-color: rgba(212, 155, 83, 0.7); background: rgba(212, 155, 83, 0.14); }
@@ -222,7 +222,7 @@
     <div class="overlay" id="intro">
       <div class="card wide">
         <p class="eyebrow">Upstarts</p>
-        <h1>Choose your dinosaur</h1>
+        <h1>Choose what you hatch as</h1>
         <p class="lede">Ischigualasto, about 231 million years ago. Crocodile relatives rule the valley. You hatch small: drink, scavenge, grow, and stay out of the way of <i>Saurosuchus</i> until you can hunt for yourself.</p>
         <div class="species" id="pickIntro" role="listbox" aria-label="Species"></div>
         <p class="lede small">Hold B / G to drink at water, or sniff the wind away from it · hold X / E to eat a carcass, or bite live prey · right trigger / Shift sprints. Death is permanent; only your records carry over.</p>

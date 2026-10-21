@@ -12,7 +12,7 @@ class SMesh {
   px = 0; pz = 0; pyaw = 0;
   lowered = 0;
   sleep = 0;
-  // The model is built at the 6.5 m first-pass size; the sim's animal is the scaled-back 4.1 m sub-adult.
+  // The model is built at the 6.5 m first-pass size; the sim's animal is a 3.5 m sub-adult (D23).
   readonly k = SAUROSUCHUS.length / 6.5;
   constructor() {
     this.root.scale.setScalar(this.k);

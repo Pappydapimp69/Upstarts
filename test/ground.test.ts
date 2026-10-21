@@ -52,7 +52,7 @@ describe('ground: rocks and logs are footing', () => {
     run(d, 0.5, { moveX: 0, moveZ: 0, sprint: 0 });
     stepDino(d, { ...go(d), jump: true }, TICK_DT);
     run(d, 2, (dd) => (Math.hypot(dd.x - k.x, dd.z - k.z) > 0.4 ? { moveX: k.x - dd.x, moveZ: k.z - dd.z, sprint: 0 } : { moveX: 0, moveZ: 0, sprint: 0 }));
-    expect(d.y).toBeGreaterThan(k.ground + 0.7);
+    expect(d.y).toBeGreaterThan(k.ground + 0.6); // up on it (the rim slopes)
     // Let go at the edge, it stops there; push on and it drops off.
     const yaw = d.yaw;
     run(d, 2, { moveX: Math.sin(yaw), moveZ: Math.cos(yaw), sprint: 0 });

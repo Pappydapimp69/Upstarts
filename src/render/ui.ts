@@ -37,12 +37,6 @@ function partOfDay(u: number): string {
   return u < dawn ? 'Dawn' : u < dawn + high * 0.35 ? 'Morning' : u < dawn + high * 0.65 ? 'Midday' : u < dawn + high ? 'Afternoon'
     : u < dawn + high + dusk ? 'Dusk' : 'Night';
 }
-const BINOMIAL: Record<SpeciesId, string> = {
-  herrerasaurus: 'Herrerasaurus ischigualastensis',
-  eodromaeus: 'Eodromaeus murphi',
-  panphagia: 'Panphagia protos',
-  sanjuansaurus: 'Sanjuansaurus gordilloi',
-};
 const PICK_KEY = 'upstarts.species';
 
 const KEYS: Record<Device, [string, string][]> = {
@@ -93,7 +87,7 @@ export class Ui {
       this.el(id).innerHTML = SPECIES_ORDER.map((k) => {
         const sp = SPECIES[k];
         return `<button type="button" class="sp" data-sp="${k}" role="option"><span class="sname">${sp.name}</span>
-          <span class="ssize">${sp.length} m · ${sp.mass} kg · ${sp.diet === 'omnivore' ? 'plants and meat' : 'meat'}</span>
+          <span class="ssize">${sp.length} m · ${sp.mass} kg · ${sp.diet === 'omnivore' ? 'plants and meat' : sp.diet === 'rooter' ? 'ferns, roots, grubs' : 'meat'}${sp.plan === 'quad' ? ' · four legs' : ''}${sp.swim > 0 ? ' · swims' : ''}</span>
           <span class="sdesc">${sp.blurb}</span></button>`;
       }).join('');
       this.el(id).querySelectorAll<HTMLElement>('.sp').forEach((b) => b.addEventListener('click', () => this.pick(b.dataset.sp as SpeciesId)));
@@ -116,10 +110,14 @@ export class Ui {
     this.pick(SPECIES_ORDER[(i + d + SPECIES_ORDER.length) % SPECIES_ORDER.length]);
   }
 
+  private plan: 'biped' | 'quad' = 'biped';
+
   setDevice(d: Device): void {
     document.body.classList.toggle('touch', d === 'touch');
     this.el('keysTitle').textContent = d === 'pad' ? 'Controller' : d === 'touch' ? 'Touch' : 'Keyboard and mouse';
-    this.el('keysList').innerHTML = KEYS[d].map(([a, b]) => `<div style="display:contents"><dt>${a}</dt><dd>${b}</dd></div>`).join('');
+    // Four legs don't jump (owner): say so rather than offer a button that does nothing.
+    this.el('keysList').innerHTML = KEYS[d].map(([a, b]) => (a === 'Jump' && this.plan === 'quad' ? [a, 'No (four legs)'] : [a, b]))
+      .map(([a, b]) => `<div style="display:contents"><dt>${a}</dt><dd>${b}</dd></div>`).join('');
     const go = BTN[d].go;
     this.el('deathCta').textContent = d === 'touch' ? 'Tap a dinosaur to hatch again' : `Left and right to choose · ${go} to hatch again`;
     this.el('introCta').textContent = d === 'touch' ? 'Tap a dinosaur to hatch' : `Left and right to choose · ${go} to hatch`;
@@ -157,8 +155,12 @@ export class Ui {
     const dev = inputState.device, btn = BTN[dev];
     this.el('padChip').hidden = inputState.padSeen || dev !== 'pad';
 
+    if (d.species.plan !== this.plan) {
+      this.plan = d.species.plan;
+      this.setDevice(inputState.device);
+    }
     const stage = stageOf(d.growth);
-    document.querySelector('.binomial')!.textContent = BINOMIAL[d.species.id];
+    document.querySelector('.binomial')!.textContent = d.species.binomial;
     this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))} · Ischigualasto, about 231 million years ago`;
 
     const n = d.needs;
@@ -177,10 +179,11 @@ export class Ui {
     for (const [k, el] of this.vals) el.textContent = txt[k];
     const sp = d.speed;
     this.el('pace').textContent = !d.alive ? 'Dead' : d.egg > 0 ? 'Inside the egg'
+      : d.swim > 0.5 ? (d.under > 0.6 ? 'Lying low in the water' : `Swimming · ${d.speed.toFixed(1)} m/s`)
       : d.fall ? (d.fall.down ? (d.fall.t < d.fall.tT + d.fall.tL ? 'Down' : 'Getting back up') : d.fall.level === 'slip' ? 'Slipped' : 'Stumbling')
       : d.jump ? (d.jump.ph === 'crouch' ? 'Crouching to jump' : 'Airborne')
       : d.resting ? (d.stamina < 0.995 ? 'Lying down, resting' : 'Lying down, rested') : d.rest > 0.05 ? 'Getting up'
-      : sp < 0.15 ? 'Standing' : `${sp < 0.68 * d.body.sprintMax ? (sp < 1.6 * d.body.size ** 0.5 ? 'Walking' : 'Running') : 'Sprinting'} · ${sp.toFixed(1)} m/s`;
+      : sp < 0.15 ? 'Standing' : `${sp > 1.08 * d.body.walk ? (sp < 0.68 * d.body.sprintMax ? 'Running' : 'Sprinting') : 'Walking'} · ${sp.toFixed(1)} m/s`;
 
     const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs' : d.act === 'bite' ? 'Biting'
       : d.act === 'turn' || d.act === 'shuffle' ? 'Heading for the water'

@@ -1,5 +1,5 @@
 import { clamp, damp, lerp, wrapAngle } from './math';
-import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
+import { heightAt, MAP_RADIUS, PONDS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
 import { pushOutOfRocks } from './ground';
@@ -54,6 +54,8 @@ export interface Herd {
   // Where the herd is heading while calm. Moves on when they reach it.
   goalX: number;
   goalZ: number;
+  drinkUntil: number; // world time it leaves the water's edge, 0 when not drinking
+  water: boolean; // heading to the pond to drink
 }
 
 // What a herbivore can sense of a predator this tick.
@@ -65,6 +67,7 @@ export interface Predator {
   alive: boolean;
   mass: number; // kg
   stealth: number; // multiplier on how far away it can be seen (1 = in the open)
+  hunts?: boolean; // false: a big animal the herd needn't run from (a rooting aetosaur)
 }
 
 const SEP = 1.6; // m personal space
@@ -73,8 +76,22 @@ const QUORUM = 2; // fleeing neighbours needed to start fleeing (dlist/E18: k=2)
 const PANIC = 14; // m: closer than this and it flees without waiting
 const CALM = 6; // s without sensing the predator before a fleeing animal settles
 
+// The heading toward (gx, gz), walking round the pond if it lies in the way (they won't swim across it): aim for the
+// point on a ring just outside the shore that is tangent from here, on the side the goal is.
+export function headingAround(x: number, z: number, gx: number, gz: number): number {
+  const P = PONDS[0], R = P.r + 3;
+  const dx = gx - x, dz = gz - z, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+  const t = clamp((P.x - x) * ux + (P.z - z) * uz, 0, L), px = x + ux * t, pz = z + uz * t;
+  const dc = Math.hypot(x - P.x, z - P.z), miss = Math.hypot(px - P.x, pz - P.z);
+  if (miss > (dc < R ? P.r + 0.5 : R)) return Math.atan2(dx, dz);
+  const toC = Math.atan2(P.x - x, P.z - z), side = Math.sign((P.x - x) * uz - (P.z - z) * ux) || 1; // which way round is shorter
+  // Inside the ring (on the shore): walk along it, edging outward; outside: aim for the tangent point.
+  if (dc < R) return toC - side * (Math.PI / 2 + 0.25);
+  return toC - side * (Math.asin(Math.min(1, R / dc)) + 0.05);
+}
+
 export function senses(h: Herbivore, p: Predator, heard: SoundEvent[] = []): boolean {
-  if (!p.alive || p.mass < HYPERODAPEDON.ignoreBelow) return false;
+  if (!p.alive || p.hunts === false || p.mass < HYPERODAPEDON.ignoreBelow) return false;
   const dx = p.x - h.x, dz = p.z - h.z;
   const d = Math.hypot(dx, dz);
   // Sight: a wide field of view (eyes on the sides of the head), but a still animal is hard to pick out.
@@ -197,9 +214,21 @@ export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds:
       // Head up, turned toward where the danger is.
       yaw = Math.atan2(h.threatX - h.x, h.threatZ - h.z);
       target = 0;
+    } else if (herd.drinkUntil > 0 && Math.hypot(h.x - PONDS[0].x, h.z - PONDS[0].z) < PONDS[0].r + 12) {
+      // Drinking: walk down to the water's edge, each to the nearest bit of shore, then stand with the head down.
+      const P = PONDS[0], dx = h.x - P.x, dz = h.z - P.z, dl = Math.hypot(dx, dz) || 1;
+      let ex = P.x + (dx / dl) * P.r, ez = P.z + (dz / dl) * P.r;
+      for (let r = P.r * 0.8; r < P.r + 3; r += 0.25) {
+        ex = P.x + (dx / dl) * r;
+        ez = P.z + (dz / dl) * r;
+        if (waterDepthAt(ex, ez) < 0.03) break;
+      }
+      const toEdge = Math.hypot(ex - h.x, ez - h.z);
+      yaw = Math.atan2(ex - h.x, ez - h.z) + (toEdge < 0.5 ? 0 : sx * 0.3);
+      target = toEdge > 0.4 ? sp.walk * 0.7 : 0;
     } else {
       // Calm: drift toward the herd's goal, keep near the herd, nibble along.
-      const toGoal = Math.atan2(herd.goalX - h.x, herd.goalZ - h.z);
+      const toGoal = headingAround(h.x, h.z, herd.goalX, herd.goalZ);
       if (rand() < dt / 4) h.aim = toGoal + (rand() - 0.5) * 1.6;
       let ax = Math.sin(h.aim), az = Math.cos(h.aim);
       if (n) {

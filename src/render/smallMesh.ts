@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { smooth } from '../sim/math';
 import { groundAt as heightAt } from '../sim/ground';
-import { exposed, SMALL, type Grub, type Small, type SmallKind } from '../sim/smallprey';
-import { animateLegs, buildCynodont, type Body } from './creatures';
+import { exposed, smallLen, type Grub, type Small, type SmallKind } from '../sim/smallprey';
+import { WATER_Y } from '../sim/terrain';
+import { animateLegs, buildCynodont, buildFish, type Body } from './creatures';
 
 // Small prey: procedural cynodonts (creatures.ts) built at unit length and scaled to each animal; plus burrow
 // mouths and grub dig sites.
@@ -12,10 +13,10 @@ class SmallMesh {
   phase = Math.random();
   px = 0; pz = 0; pyaw = 0;
 
-  constructor(kind: SmallKind, size: number) {
-    this.b = buildCynodont(kind);
+  constructor(kind: SmallKind, len: number) {
+    this.b = kind === 'fish' ? buildFish() : buildCynodont(kind);
     this.root = new THREE.Group();
-    this.b.root.scale.setScalar(SMALL[kind].length * size);
+    this.b.root.scale.setScalar(len);
     this.root.add(this.b.root);
   }
 }
@@ -65,8 +66,7 @@ export class SmallMeshes {
     for (const s of ss) {
       let m = this.meshes.get(s.id);
       if (!m) {
-        const size = s.kind === 'cynodont' ? Math.cbrt(s.mass / 0.75) : Math.cbrt(s.mass / SMALL.exaeretodon.adult);
-        m = new SmallMesh(s.kind, size);
+        m = new SmallMesh(s.kind, smallLen(s));
         m.px = s.x;
         m.pz = s.z;
         m.pyaw = s.yaw;
@@ -81,9 +81,16 @@ export class SmallMeshes {
       }
       const x = m.px + (s.x - m.px) * alpha, z = m.pz + (s.z - m.pz) * alpha;
       const yaw = m.pyaw + Math.atan2(Math.sin(s.yaw - m.pyaw), Math.cos(s.yaw - m.pyaw)) * alpha;
-      m.root.position.set(x, heightAt(x, z), z);
       m.root.rotation.y = yaw;
-      const stride = SMALL[s.kind].length * 0.8;
+      if (s.kind === 'fish') {
+        // Just under the surface, the tail beating faster the faster it goes.
+        m.root.position.set(x, WATER_Y - 0.12, z);
+        m.phase = (m.phase + (1.5 + 4 * s.speed) * dt) % 1;
+        m.b.tail.rotation.y = 0.5 * Math.sin(m.phase * Math.PI * 2);
+        continue;
+      }
+      m.root.position.set(x, heightAt(x, z), z);
+      const stride = smallLen(s) * 0.8;
       m.phase = (m.phase + (s.speed / stride) * dt) % 1;
       animateLegs(m.b, m.phase, 0.7 * smooth(0.03, 0.4, s.speed));
     }

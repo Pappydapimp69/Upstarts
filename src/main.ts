@@ -5,6 +5,8 @@ import { groundAt, surfaceAt as surfaceKind } from './sim/ground';
 import { waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
+import { QuadAnimator } from './render/quadruped';
+import { QUAD_LOOKS } from './render/quadLooks';
 import { fernCut } from './render/dlist/env.js';
 import { dayTime } from './sim/clock';
 import { isSprinting, type Command } from './sim/dino';
@@ -26,6 +28,7 @@ import { setPlaying, setRoarLabel, state as inputState } from './input/input';
 import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
+import type { SpeciesId } from './sim/species';
 import { bodyScale } from './sim/balance';
 import { Marker } from './render/marker';
 import { BLOOD, Drops } from './render/blood';
@@ -66,7 +69,10 @@ const woundText = (left: number): string => left <= 0 ? 'Killed it' : left > 0.6
 let p = world.player;
 // The Dlist demo's Herrerasaurus model, reshaped per species. One model, re-planted for each new
 // hatchling and rebuilt when the species changes.
-let herrera = new HerreraAnimator(p.species.id);
+// Two-legged species are the Herrerasaurus rig reshaped (shapes.js); four-legged ones have their own (quadruped.ts).
+type Animator = HerreraAnimator | QuadAnimator;
+const makeAnimator = (id: string): Animator => (QUAD_LOOKS[id] ? new QuadAnimator(id, QUAD_LOOKS[id]) : new HerreraAnimator(id));
+let herrera: Animator = makeAnimator(p.species.id);
 view.scene.add(herrera.root);
 const rigScale = (): number => p.body.hip / herrera.rigHip;
 herrera.plant(p.x, p.z, p.yaw, rigScale());
@@ -74,7 +80,7 @@ function useModel(): void {
   if (herrera.speciesId === p.species.id) return;
   const onStep = herrera.onStep, onSound = herrera.onSound;
   view.scene.remove(herrera.root);
-  herrera = new HerreraAnimator(p.species.id);
+  herrera = makeAnimator(p.species.id);
   herrera.onStep = onStep;
   herrera.onSound = onSound;
   view.scene.add(herrera.root);
@@ -185,7 +191,7 @@ function frame(now: number): void {
   const live = started && !paused;
   if (live && !p.alive && inp.nav) ui.move(inp.nav); // death card: choose what to hatch as next
   setPlaying(live && p.alive);
-  setRoarLabel(CALLS[roarStyle(p.stamina, p.needs.thirst, p.needs.hunger)].label);
+  setRoarLabel(CALLS[p.species.ecto ? p.species.calls : roarStyle(p.stamina, p.needs.thirst, p.needs.hunger)].label);
   const cmd = cam.command(live ? inp : { ...inp, moveF: 0, moveR: 0, sprint: 0, drink: false, eat: false, confirm: false, call: null });
   if (cmd.call) pendingCall = cmd.call;
   if (cmd.respawn) pendingRespawn = true;
@@ -280,7 +286,7 @@ function frame(now: number): void {
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
     biteT: held ? fx.heldBiteT : p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
     biteHit: fx.biteHit, hurtT: fx.hurtT, hurtSide: fx.hurtSide, hurtK: fx.hurtK, fall: p.fall, bodyK: bodyScale(p),
-    air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, held ? 0 : dt);
+    air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0, swim: p.swim, under: p.under }, held ? 0 : dt);
   blood.update(dt);
   coatView.update(p, herrera, dt);
   view.setTime(dayTime(world.tick * TICK_DT));
@@ -320,7 +326,7 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 // ?debug exposes the world and camera for automated checks (screenshots, headless playtests).
-if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, groundAt, start: () => { started = true; ui.showIntro(false); } };
+if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, groundAt, hatch: (id: SpeciesId) => hatchAs(world, id), start: () => { started = true; ui.showIntro(false); } };
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.

@@ -31,13 +31,19 @@ export const fullNeeds = (): Needs => ({ hunger: 1, thirst: 1, health: 1 });
 // factor for all species, keeping the real mass^0.324 spread).
 export const needPace = (adultMass: number): number => Math.pow(350 / adultMass, 0.324);
 
+// Cold-blooded reptiles run on far less: field metabolic rate (Nagy) puts endotherms 7.1x above ectotherms at 5 kg and
+// 3.2x at 200 kg (Brain dlist: hunger from FMR). Hunger slows by that gap; thirst by its square root (less water lost
+// through breath and skin, but they still drink).
+export const ectoGap = (adultMass: number): number => 7.1 * Math.pow(adultMass / 5, -0.23);
+
 // scale speeds the clock up for testing (?fast in the URL); pace is needPace for the species.
-export function stepNeeds(n: Needs, sprinting: boolean, dt: number, scale = 1, pace = 1): void {
+export function stepNeeds(n: Needs, sprinting: boolean, dt: number, scale = 1, pace = 1, gap = 1): void {
   const t = dt * scale;
   const tp = t * pace;
+  const tpH = tp / gap, tpT = tp / Math.sqrt(gap);
   const healing = n.health < 1 && n.hunger > NEEDS.healAbove && n.thirst > NEEDS.healAbove;
-  n.thirst = clamp(n.thirst - (tp / NEEDS.thirstEmpty) * (sprinting ? NEEDS.sprintThirst : 1), 0, 1);
-  n.hunger = clamp(n.hunger - (tp / NEEDS.hungerEmpty) * (sprinting ? NEEDS.sprintHunger : 1) * (healing ? NEEDS.healHunger : 1), 0, 1);
+  n.thirst = clamp(n.thirst - (tpT / NEEDS.thirstEmpty) * (sprinting ? NEEDS.sprintThirst : 1), 0, 1);
+  n.hunger = clamp(n.hunger - (tpH / NEEDS.hungerEmpty) * (sprinting ? NEEDS.sprintHunger : 1) * (healing ? NEEDS.healHunger : 1), 0, 1);
   if (n.hunger <= 0 || n.thirst <= 0) n.health = clamp(n.health - NEEDS.starveDamage * t * ((n.hunger <= 0 ? 1 : 0) + (n.thirst <= 0 ? 1 : 0)), 0, 1);
   else if (healing) n.health = clamp(n.health + NEEDS.healRate * t, 0, 1);
 }

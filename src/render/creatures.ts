@@ -230,6 +230,29 @@ export function buildCynodont(kind: 'cynodont' | 'exaeretodon'): Body {
   return { root, head, jaw, tail, tail2, legs };
 }
 
+// A ray-finned fish (Gyrolepidoides, Challaia: small heavy-scaled palaeoniscoids), unit length, +z forward: a
+// spindle body with a forked, upturned (heterocercal) tail fin. Colours are guesses.
+export function buildFish(): Body {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, envMapIntensity: 0.9 });
+  const sweep = sweeper(mat, { dorsal: '#3a4436', flank: '#7d8a74', belly: '#c9c8b0', band: 0.05 });
+  const root = new THREE.Group();
+  root.add(sweep([[-0.3, 0, 0.04, 0.07], [-0.1, 0, 0.07, 0.11], [0.15, 0, 0.07, 0.1], [0.35, -0.01, 0.045, 0.06], [0.45, -0.015, 0.015, 0.025]], { seed: 31, ex: 2 }));
+  const tail = new THREE.Group();
+  tail.position.set(0, 0, -0.3);
+  root.add(tail);
+  const fin = sweep([[0, 0, 0.012, 0.05], [-0.1, 0.03, 0.006, 0.09], [-0.17, 0.06, 0.003, 0.12]], { seed: 32, ex: 2, ring: 8 });
+  tail.add(fin);
+  const tail2 = new THREE.Group();
+  tail.add(tail2);
+  const head = new THREE.Group();
+  head.position.set(0, 0, 0.3);
+  root.add(head);
+  const jaw = new THREE.Group();
+  head.add(jaw);
+  eyes(head, 0.045, 0.02, 0.06, 0.014);
+  return { root, head, jaw, tail, tail2, legs: [] };
+}
+
 // Walk cycle for four legs in diagonal pairs: hips swing, knees fold on the forward swing.
 export function animateLegs(b: Body, phase: number, swing: number, sleep = 0): void {
   const ph = phase * Math.PI * 2;

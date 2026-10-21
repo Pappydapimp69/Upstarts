@@ -54,23 +54,23 @@ describe('growth', () => {
   it('takes about the set time to reach adult', () => {
     expect(HERRERASAURUS.toAdult).toBe(2.5 * 3600);
     expect(stageOf(0.9)).toBe('adult');
-    expect(bodyOf(HERRERASAURUS, 1).mass).toBeCloseTo(350);
+    expect(bodyOf(HERRERASAURUS, 1).mass).toBeCloseTo(270); // measured (Brain dlist/E93; Benson et al. 2014: 260)
   });
 });
 
 describe('combat', () => {
   it('size ratio decides bite damage', () => {
-    expect(bitesToKill(350, 80)).toBe(2); // adult on Hyperodapedon
-    expect(maxHp(350)).toBeCloseTo(100);
-    expect(maxHp(SAUROSUCHUS.mass)).toBeGreaterThan(maxHp(350)); // bigger and heavier: more HP
+    expect(bitesToKill(HERRERASAURUS.mass, 80)).toBe(3); // adult on Hyperodapedon (3.4x its mass)
+    expect(maxHp(350)).toBeCloseTo(100); // the reference
+    expect(maxHp(HERRERASAURUS.mass)).toBeGreaterThan(maxHp(SAUROSUCHUS.mass)); // the 270 kg adult outweighs the 245 kg sub-adult
     expect(maxHp(80)).toBeLessThan(maxHp(350));
     const hatch = bodyOf(HERRERASAURUS, 0).mass;
     expect(biteDamage(hatch, 80)).toBeLessThan(0.05); // a hatchling can't take one down
     // Saurosuchus bites by its weight (D20): near enough even with an adult Herrerasaurus, which bites more often.
-    const theirs = biteDamage(SAUROSUCHUS.mass, 350, SAUROSUCHUS.biteMult, 1);
-    const ours = biteDamage(350, SAUROSUCHUS.mass, 1, SAUROSUCHUS.hide);
+    const theirs = biteDamage(SAUROSUCHUS.mass, HERRERASAURUS.mass, SAUROSUCHUS.biteMult, 1);
+    const ours = biteDamage(HERRERASAURUS.mass, SAUROSUCHUS.mass, 1, SAUROSUCHUS.hide);
     expect(SAUROSUCHUS.biteMult).toBe(1);
-    expect(theirs).toBeLessThan(0.4);
+    expect(theirs).toBeLessThan(ours);
     expect(ours / 0.8).toBeGreaterThan(theirs / SAUROSUCHUS.biteEvery); // more damage per second
   });
 });

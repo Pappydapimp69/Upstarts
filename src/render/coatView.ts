@@ -1,12 +1,14 @@
 import * as THREE from 'three';
-import { COAT, mudFeet, wetFeet } from '../sim/coat';
+import { COAT, mudFeet, wetFeet, type Coat } from '../sim/coat';
 import type { Dino } from '../sim/dino';
 import { groundAt, surfaceAt } from '../sim/ground';
 import { MUD_Y, WATER_Y, waterDepthAt } from '../sim/terrain';
 import { skinU, BANDS, BAND_H } from './dlist/herrerasaurus.js';
 import { Drops, FLAKES, MUD_DROPS, WATER_DROPS } from './blood';
 
-type Animator = { rigHip: number; dino: { bodyMesh: THREE.SkinnedMesh; bandVerts: number[][] } };
+// The Herrerasaurus rig (a skinned mesh with height bands) or a four-legged one (its own coat shader, bodyPoint()).
+type Animator = { rigHip: number; dino?: { bodyMesh: THREE.SkinnedMesh; bandVerts: number[][] }; quad?: boolean;
+  setCoat?: (c: Coat, hip: number, alive: boolean) => void; bodyPoint?: (h: number, out: THREE.Vector3) => boolean };
 
 // The player's coat made visible (the Dlist demo): the skin shader's wet and mud bands driven from the sim's coat,
 // drips off wet skin, dry mud flaking off, water and mud thrown up by the feet, and tracks left by wet or muddy feet.
@@ -56,17 +58,20 @@ export class CoatView {
       const f = (b * BAND_H) / a.rigHip / COAT.band, i = Math.min(COAT.bands - 1, Math.floor(f)), j = Math.min(COAT.bands - 1, i + 1);
       return arr[i] + (arr[j] - arr[i]) * (f - i);
     };
-    const flaked = new Float32Array(COAT.bands);
-    for (let b = 0; b < COAT.bands; b++) flaked[b] = c.flake[b];
-    for (let b = 0; b < BANDS; b++) {
-      skinU.uWet.value[b] = d.alive ? sample(c.wet, b) : 0;
-      skinU.uMudCover.value[b] = d.alive ? sample(c.mud, b) : 0;
-      skinU.uMudDry.value[b] = sample(c.dry, b);
-      skinU.uMudFlake.value[b] = sample(flaked, b);
+    if (a.setCoat) a.setCoat(c, d.body.hip, d.alive);
+    else {
+      for (let b = 0; b < BANDS; b++) {
+        skinU.uWet.value[b] = d.alive ? sample(c.wet, b) : 0;
+        skinU.uMudCover.value[b] = d.alive ? sample(c.mud, b) : 0;
+        skinU.uMudDry.value[b] = sample(c.dry, b);
+        skinU.uMudFlake.value[b] = sample(c.flake, b);
+      }
     }
 
-    const body = a.dino.bodyMesh, bands = a.dino.bandVerts, rigToWorld = d.body.hip / a.rigHip;
+    const rigToWorld = d.body.hip / a.rigHip;
     const fromBand = (bWorld: number): boolean => {
+      if (a.bodyPoint) return a.bodyPoint(bWorld * COAT.band * d.body.hip, this.v);
+      const body = a.dino!.bodyMesh, bands = a.dino!.bandVerts;
       const rb = Math.round((bWorld * COAT.band * d.body.hip) / rigToWorld / BAND_H), list = bands[Math.max(0, Math.min(bands.length - 1, rb))];
       if (!list?.length) return false;
       body.getVertexPosition(list[(Math.random() * list.length) | 0], this.v);

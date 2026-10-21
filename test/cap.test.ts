@@ -15,16 +15,16 @@ describe('ratio-gated bite cap', () => {
     expect(biteCap(500, 100)).toBeLessThan(1);
   });
 
-  it('Saurosuchus: adult Herrerasaurus 3 bites, sub-adult 2, juvenile still 1', () => {
-    expect(sauroBites(HERRERASAURUS.mass)).toBe(3);
+  it('Saurosuchus (245 kg): adult Herrerasaurus 4 bites, three-quarter grown 3, juvenile 1', () => {
+    expect(sauroBites(HERRERASAURUS.mass)).toBe(4);
     expect(sauroBites(bodyOf(HERRERASAURUS, 0.85).mass)).toBe(3); // just grown up
-    expect(sauroBites(96)).toBe(2); // a sub-adult
+    expect(sauroBites(96)).toBe(3);
     expect(sauroBites(25)).toBe(1); // massively outclassed
   });
 
-  it('Saurosuchus on Hyperodapedon 2 (scaled back to 385 kg it is under 5x its mass), adult Herrerasaurus on Hyperodapedon 2', () => {
-    expect(sauroBites(HYPERODAPEDON.mass)).toBe(2);
-    expect(bitesToKill(HERRERASAURUS.mass, HYPERODAPEDON.mass)).toBe(2);
+  it('Saurosuchus on Hyperodapedon 3, adult Herrerasaurus on Hyperodapedon 3 (both about 3x its mass)', () => {
+    expect(sauroBites(HYPERODAPEDON.mass)).toBe(3);
+    expect(bitesToKill(HERRERASAURUS.mass, HYPERODAPEDON.mass)).toBe(3);
   });
 
   it('nothing dies in one bite from an animal less than 3x its mass', () => {

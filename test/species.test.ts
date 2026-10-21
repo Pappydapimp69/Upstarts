@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CARCASS, createWorld, step, TICK_HZ } from '../src/sim/world';
 import { createDino, type Command } from '../src/sim/dino';
-import { EODROMAEUS, HERRERASAURUS, PANPHAGIA, SANJUANSAURUS, SPECIES, SPECIES_ORDER } from '../src/sim/species';
-import { maxHp } from '../src/sim/combat';
+import { AETOSAUROIDES, EODROMAEUS, hatchFraction, HERRERASAURUS, PANPHAGIA, PROTEROCHAMPSA, SANJUANSAURUS, SPECIES, SPECIES_ORDER } from '../src/sim/species';
+import { bodyOf } from '../src/sim/growth';
 import { browseAt } from '../src/sim/flora';
-import { needPace } from '../src/sim/needs';
+import { ectoGap, needPace } from '../src/sim/needs';
 
 const idle: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
@@ -15,23 +15,42 @@ function fernSpot(): [number, number] {
 }
 
 describe('species', () => {
-  it('four playable species, ordered by size', () => {
-    expect(SPECIES_ORDER).toHaveLength(4);
-    expect(new Set(SPECIES_ORDER.map((id) => SPECIES[id].name)).size).toBe(4);
-    expect(maxHp(HERRERASAURUS.mass)).toBeGreaterThan(maxHp(SANJUANSAURUS.mass));
-    expect(maxHp(SANJUANSAURUS.mass)).toBeGreaterThan(maxHp(PANPHAGIA.mass));
+  it('five playable species with distinct roles; Sanjuansaurus parked', () => {
+    expect(SPECIES_ORDER).toEqual(['herrerasaurus', 'eodromaeus', 'panphagia', 'proterochampsa', 'aetosauroides']);
+    expect(SPECIES_ORDER.includes('sanjuansaurus')).toBe(false);
+    const plans = SPECIES_ORDER.map((id) => SPECIES[id].plan), diets = new Set(SPECIES_ORDER.map((id) => SPECIES[id].diet));
+    expect(plans.filter((p) => p === 'quad')).toHaveLength(2);
+    expect(diets.size).toBe(3);
+    expect(SPECIES_ORDER.filter((id) => SPECIES[id].swim > 0)).toEqual(['proterochampsa']);
   });
 
-  it('Herrerasaurus is the fastest outright; Eodromaeus is no faster for its size than Panphagia', () => {
-    const rel = (s: typeof EODROMAEUS): number => s.sprintMax / Math.sqrt(s.hip);
-    expect(rel(EODROMAEUS)).toBeLessThanOrEqual(rel(PANPHAGIA));
-    expect(EODROMAEUS.sprintMax).toBeLessThan(4); // m/s: was 5.2, felt far too fast
-    expect(HERRERASAURUS.sprintMax).toBeGreaterThan(SANJUANSAURUS.sprintMax);
+  it('measured masses and sizes (Brain dlist/E90-E97; the research notes in species.ts)', () => {
+    expect(HERRERASAURUS.mass).toBe(270);
+    expect(EODROMAEUS.mass).toBe(5);
+    expect(PANPHAGIA.mass).toBe(12);
+    expect(SANJUANSAURUS.mass).toBe(133);
+    // Hatchlings from egg mass: a 270 kg Herrerasaurus hatches at about 0.36 kg (hatchSize about 0.11).
+    expect(HERRERASAURUS.hatchSize).toBeCloseTo(0.11, 2);
+    expect(bodyOf(HERRERASAURUS, 0).mass).toBeCloseTo(0.36, 1);
+    expect(EODROMAEUS.hatchSize).toBeCloseTo(0.275, 2);
+    expect(PANPHAGIA.hatchSize).toBeCloseTo(0.225, 2);
+    expect(hatchFraction(5)).toBeGreaterThan(hatchFraction(270)); // small species hatch relatively bigger
   });
 
-  it('small species get hungry faster (mass^0.324)', () => {
+  it('Herrerasaurus is the fastest; the four-legged reptiles are slow on land', () => {
+    for (const id of SPECIES_ORDER) if (id !== 'herrerasaurus') expect(SPECIES[id].sprintMax).toBeLessThan(HERRERASAURUS.sprintMax);
+    expect(EODROMAEUS.sprintMax).toBeLessThan(4.1); // m/s: was 5.2, felt far too fast
+    expect(PROTEROCHAMPSA.sprintMax).toBeLessThan(2.5);
+    expect(AETOSAUROIDES.sprintMax).toBeLessThan(2.5);
+    expect(PROTEROCHAMPSA.swim).toBeGreaterThan(PROTEROCHAMPSA.walk);
+  });
+
+  it('small species get hungry faster (mass^0.324); cold-blooded ones need several times less', () => {
     expect(needPace(EODROMAEUS.mass)).toBeGreaterThan(3.5);
-    expect(needPace(HERRERASAURUS.mass)).toBe(1);
+    expect(needPace(350)).toBe(1);
+    expect(ectoGap(5)).toBeCloseTo(7.1, 1);
+    expect(ectoGap(200)).toBeGreaterThan(2.8);
+    expect(ectoGap(200)).toBeLessThan(3.4);
   });
 
   it('Panphagia browses ferns back to full; a carnivore can\'t', () => {

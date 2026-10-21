@@ -1,5 +1,5 @@
 import { clamp, damp, wrapAngle } from './math';
-import { MAP_RADIUS, SPAWNS, waterDepthAt } from './terrain';
+import { MAP_RADIUS, PONDS, SPAWNS, waterDepthAt } from './terrain';
 import { browseAt, pushOutOfTrees, TREES } from './flora';
 import { pushOutOfRocks } from './ground';
 import { heardFrom } from './hearing';
@@ -11,7 +11,7 @@ import type { Predator } from './herbivore';
 // bolt for their burrows, and Exaeretodon, a mid-sized cynodont browser. Numbers are game design, not fossil
 // facts (Exaeretodon adult mass is a guess). Everything here draws from its own RNG stream.
 
-export type SmallKind = 'cynodont' | 'exaeretodon';
+export type SmallKind = 'cynodont' | 'exaeretodon' | 'fish';
 
 export const SMALL = {
   cynodont: {
@@ -22,17 +22,29 @@ export const SMALL = {
     hide: 12, // s it stays underground at least
     respawn: 90,
   },
+  // Adult about 100 kg (Filippini et al. 2022; Brain dlist/E91), 2.0 m; the 8 kg juveniles kept.
   exaeretodon: {
-    name: 'Exaeretodon', length: 1.6, hip: 0.32, walk: 0.8, flee: 5.2, turn: 4,
+    name: 'Exaeretodon', length: 2.0, hip: 0.4, walk: 0.8, flee: 5.2, turn: 4,
     alert: 25, hears: 45, roam: 14, hide: 0, respawn: 240,
-    adult: 50, juvenile: 8, // kg
+    adult: 100, juvenile: 8, // kg
+  },
+  // Ray-finned fish in the pond (Gyrolepidoides, Challaia). Freshwater vertebrates are rare in these beds, so few.
+  fish: {
+    name: 'fish', length: 0.35, hip: 0, walk: 0.35, flee: 2.6, turn: 6,
+    alert: 4, hears: 55, roam: 7, hide: 0, respawn: 200,
   },
 } as const;
+
+// Body length scales with the cube root of mass, from the size each kind's numbers are given for.
+const REF_MASS: Record<SmallKind, number> = { cynodont: 0.75, exaeretodon: 100, fish: 0.5 };
+export const smallLen = (m: { kind: SmallKind; mass: number }): number => SMALL[m.kind].length * Math.cbrt(m.mass / REF_MASS[m.kind]);
+export const smallHip = (m: { kind: SmallKind; mass: number }): number => SMALL[m.kind].hip * Math.cbrt(m.mass / REF_MASS[m.kind]);
 
 export const SMALL_POP = {
   burrows: 4,
   perBurrow: 3,
   exaeretodon: { adults: 3, juveniles: 3 },
+  fish: 5,
   grubs: 40,
 };
 
@@ -123,8 +135,20 @@ export function createSmall(id: number, kind: SmallKind, homeX: number, homeZ: n
   };
 }
 
-export const smallMass = (kind: SmallKind, rand: () => number, juvenile = false): number =>
-  kind === 'cynodont' ? 0.5 + rand() * 0.5 : juvenile ? SMALL.exaeretodon.juvenile : SMALL.exaeretodon.adult;
+// Small cynodonts come in two classes (Brain dlist handoff): mouse-sized ones of 0.1 to 0.3 kg, which a hatchling can
+// take, and rat-sized ones near 2.5 kg. `big` picks the class (alternate burrows).
+export const smallMass = (kind: SmallKind, rand: () => number, juvenile = false, big = false): number =>
+  kind === 'cynodont' ? (big ? 2 + rand() : 0.1 + rand() * 0.2) : kind === 'fish' ? 0.3 + rand() * 1.2 : juvenile ? SMALL.exaeretodon.juvenile : SMALL.exaeretodon.adult;
+
+// Somewhere in the pond deep enough to swim.
+export function fishHome(rand: () => number): { x: number; z: number } {
+  const P = PONDS[0];
+  for (let i = 0; i < 200; i++) {
+    const a = rand() * Math.PI * 2, r = rand() * P.r * 0.7, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r;
+    if (waterDepthAt(x, z) > 0.5) return { x, z };
+  }
+  return { x: P.x, z: P.z };
+}
 
 // Out in the open and targetable (not underground, not respawning).
 export const exposed = (s: Small): boolean => s.state === 'forage' || s.state === 'flee';
@@ -180,6 +204,10 @@ export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: n
       }
       yaw = Math.atan2(s.homeX - s.x, s.homeZ - s.z);
       target = sp.flee;
+    } else if (s.kind === 'fish') {
+      // Dart away through the water.
+      yaw = Math.atan2(s.x - s.threatX, s.z - s.threatZ);
+      target = sp.flee * (s.stateT > 3 ? 0.5 : 1);
     } else {
       // Run straight away from the threat, tiring after a few seconds of flight.
       yaw = Math.atan2(s.x - s.threatX, s.z - s.threatZ);
@@ -198,15 +226,20 @@ export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: n
       target = sp.walk;
     }
   }
-  // Steer away from deep water and the map edge.
+  // Steer away from deep water and the map edge; a fish steers away from the shallows instead.
   const lx = s.x + Math.sin(yaw) * 2, lz = s.z + Math.cos(yaw) * 2;
-  if (waterDepthAt(lx, lz) > 0.2 || Math.hypot(lx, lz) > MAP_RADIUS - 12) yaw += Math.PI / 2;
+  if (s.kind === 'fish' ? waterDepthAt(lx, lz) < 0.35 : waterDepthAt(lx, lz) > 0.2 || Math.hypot(lx, lz) > MAP_RADIUS - 12) yaw += Math.PI / 2;
   target *= 0.4 + 0.6 * clamp(s.health, 0, 1); // a wounded animal can't run as fast (half health: 70% speed)
   const turn = sp.turn * dt;
   s.yaw = wrapAngle(s.yaw + clamp(wrapAngle(yaw - s.yaw), -turn, turn));
   s.speed = damp(s.speed, target, 6, dt);
-  [s.x, s.z] = pushOutOfTrees(s.x + Math.sin(s.yaw) * s.speed * dt, s.z + Math.cos(s.yaw) * s.speed * dt, sp.length * 0.3);
-  [s.x, s.z] = pushOutOfRocks(s.x, s.z, sp.length * 0.3, sp.hip);
+  const nx = s.x + Math.sin(s.yaw) * s.speed * dt, nz = s.z + Math.cos(s.yaw) * s.speed * dt;
+  if (s.kind === 'fish') {
+    if (waterDepthAt(nx, nz) > 0.3) [s.x, s.z] = [nx, nz];
+    return;
+  }
+  [s.x, s.z] = pushOutOfTrees(nx, nz, smallLen(s) * 0.3);
+  [s.x, s.z] = pushOutOfRocks(s.x, s.z, smallLen(s) * 0.3, smallHip(s));
 }
 
 function setState(s: Small, st: SmallState): void {

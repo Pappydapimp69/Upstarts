@@ -43,7 +43,11 @@ describe('night sleep (D14)', () => {
       w.sauros = [];
       for (let i = 0; i < 25 * TICK_HZ; i++) step(w, idle);
       const h = w.herbivores[0];
-      w.player = createDino(SPECIES.herrerasaurus, h.x, h.z - 16, 0, 1);
+      // Come at it from outside its herd, so the walk isn't through the other sleepers.
+      const mates = w.herbivores.filter((k) => k.herd === h.herd);
+      const cx = mates.reduce((a, k) => a + k.x, 0) / mates.length, cz = mates.reduce((a, k) => a + k.z, 0) / mates.length;
+      const ax = h.x - cx, az = h.z - cz, al = Math.hypot(ax, az) || 1;
+      w.player = createDino(SPECIES.herrerasaurus, h.x + (ax / al) * 16, h.z + (az / al) * 16, 0, 1);
       let woke = false;
       for (let i = 0; i < 4 * TICK_HZ && Math.hypot(w.player.x - h.x, w.player.z - h.z) > 3.5; i++) {
         step(w, { moveX: h.x - w.player.x, moveZ: h.z - w.player.z, sprint });

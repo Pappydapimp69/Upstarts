@@ -68,7 +68,9 @@ export function footCheck(d: Dino, fx: number, fz: number, lx: number, lz: numbe
   const turning = (0.6 * Math.abs(v * d.yawRate)) / 9.81; // sideways grip a turn needs, eased by leaning into it
   // Plain dry ground is checked only when something could go wrong: rocks, slick feet, or a hard turn at speed.
   if (!onRock && !impact && wet < 0.1 && mud < 0.1 && turning < 0.5) return null;
-  const trip = catchD > 0 ? smooth(0.02, 0.1, catchD / sz) * (v / 4) * massK : 0;
+  // Four legs (owner): a toe that catches doesn't trip it, and it never goes down; the footing can still give.
+  const quad = d.species.plan === 'quad';
+  const trip = catchD > 0 && !quad ? smooth(0.02, 0.1, catchD / sz) * (v / 4) * massK : 0;
   const legT = (Math.abs(along) / Math.max(0.3 * sz, hip)) * smooth(0.3, 2.0, v); // a slow step loads the foot almost straight down
   const fwX = Math.sin(d.yaw), fwZ = Math.cos(d.yaw), sx = Math.cos(d.yaw), szz = -Math.sin(d.yaw);
   const ga = (dx: number, dz: number): number => groundAt(fx + dx, fz + dz);
@@ -90,7 +92,7 @@ export function footCheck(d: Dino, fx: number, fz: number, lx: number, lz: numbe
   const cap = lerp(0.65, 1, smooth(0, 0.8, d.stamina)); // fresher legs recover more
   const score = Math.max(trip, slip, roll) / cap;
   // Only a sprint puts it down, and only on tired legs (below half stamina); it stays rare.
-  const downAt = !sprinting || d.stamina >= 0.5 ? Infinity : lerp(2.1, 3.5, smooth(0.1, 0.5, d.stamina));
+  const downAt = quad || !sprinting || d.stamina >= 0.5 ? Infinity : lerp(2.1, 3.5, smooth(0.1, 0.5, d.stamina));
   return { trip, slip, roll, score, outcome: score >= downAt ? 'down' : score >= 0.55 ? 'stagger' : 'ok' };
 }
 

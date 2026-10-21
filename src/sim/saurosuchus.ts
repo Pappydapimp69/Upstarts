@@ -10,25 +10,28 @@ import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
 // Saurosuchus: the apex predator, a big crocodile-line archosaur. Rare, roams a
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
 // its speeds are guesses, labelled as such. Size is scaled back (owner's call) to the measured
-// sub-adults, 4.07 m and 385 kg (Brain dlist/E98: mass = 5.71 L^3), so it only kills in one bite
+// sub-adults (Brain dlist/E98: mass = 5.71 L^3), and younger still (D23), so it only kills in one bite
 // when it massively outclasses its target (D17's cap). At that size it bites by its weight alone, with no
 // armour bonus, and a full-grown Herrerasaurus is its predator, not its prey (the owner's call, D20): it
 // won't hunt one, it backs off from one that comes at it, and loses a straight fight.
 export const SAUROSUCHUS = {
   name: 'Saurosuchus',
-  length: 4.1, // m, a sub-adult like the measured specimens
-  hip: 0.57, // scaled with length from the 6.5 m / 0.9 m first pass
-  mass: 385, // kg: the measured 4.07 m sub-adults (5.71 x L^3)
-  meat: 150,
+  // A younger sub-adult than the measured 4.07 m / 385 kg PVSJ 32 (von Baczko et al. 2024), on the same mass law
+  // (Brain dlist/E98: mass = 5.71 L^3): at 3.5 m it is 245 kg, lighter than a 270 kg adult Herrerasaurus, so the
+  // owner's call (D20: a full-grown Herrerasaurus is its predator) holds with the measured weights.
+  length: 3.5, // m
+  hip: 0.49, // scaled with length from the 4.1 m / 0.57 m sub-adult
+  mass: 245, // kg: 5.71 x 3.5^3
+  meat: 95,
   patrol: 1.2, // m/s
   stalk: 0.7, // creeping, easing to stalkSlow in the last stretch
   stalkSlow: 0.3,
-  charge: 6.0, // burst, m/s: slower than an adult Herrerasaurus sprint (7.4), faster than juveniles
+  charge: 5.5, // burst, m/s: slower than an adult Herrerasaurus sprint (7.1), faster than juveniles
   sprintTime: 6, // s of full charge
   react: 0.5, // s for prey to react once it charges (tau in the catch radius)
   turnSlow: 1.6, // rad/s
   turnFast: 0.9, // at a charge: a long body turns wide
-  reach: 2.0, // m from its centre to what its jaws can close on (scaled with length)
+  reach: 1.7, // m from its centre to what its jaws can close on (scaled with length)
   biteCone: 0.6,
   biteEvery: 1.4, // s
   biteMult: 1, // bites by its weight, like everything else (D20)
