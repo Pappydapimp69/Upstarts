@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { fbm } from '../sim/noise';
-import { heightAt } from '../sim/terrain';
+import { groundAt as heightAt } from '../sim/ground';
 import type { Dino } from '../sim/dino';
 
 // The hatch, from the Dlist tutorial: a soft, leathery egg (early dinosaur eggs were likely soft: Norell et al.

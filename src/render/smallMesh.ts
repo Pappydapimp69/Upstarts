@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { smooth } from '../sim/math';
-import { heightAt } from '../sim/terrain';
+import { groundAt as heightAt } from '../sim/ground';
 import { exposed, SMALL, type Grub, type Small, type SmallKind } from '../sim/smallprey';
 import { animateLegs, buildCynodont, type Body } from './creatures';
 

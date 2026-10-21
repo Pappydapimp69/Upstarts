@@ -1,7 +1,8 @@
 import { createWorld, hatchAs, step, TICK_DT, CARCASS } from './sim/world';
 import { browseAt } from './sim/flora';
 import { lerp, smooth, wrapAngle } from './sim/math';
-import { heightAt, waterDepthAt } from './sim/terrain';
+import { groundAt, surfaceAt as surfaceKind } from './sim/ground';
+import { waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
 import { fernCut } from './render/dlist/env.js';
@@ -26,7 +27,8 @@ import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
 import { Marker } from './render/marker';
-import { Blood } from './render/blood';
+import { BLOOD, Drops } from './render/blood';
+import { CoatView, coatText } from './render/coatView';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
@@ -51,8 +53,10 @@ const sauroMeshes = new SauroMeshes();
 view.scene.add(sauroMeshes.group);
 const marker = new Marker();
 view.scene.add(marker.g);
-const blood = new Blood(heightAt);
+const blood = new Drops(groundAt, BLOOD);
 view.scene.add(blood.points);
+const coatView = new CoatView();
+view.scene.add(coatView.group);
 // Fight feel (the Dlist demo's): a hit-stop freezes your own animation for a few hundredths of a second when a
 // bite lands, the head shakes to tear, and a bite taken makes it flinch away from that side.
 const fx = { hold: 0, heldBiteT: 0, biteHit: false, hurtT: 9, hurtSide: 0, hurtK: 0, jolt: 0 };
@@ -88,7 +92,9 @@ audio.onState = () => {
   if (st === 'on') setTimeout(() => (soundChip.hidden = audio.status === 'on'), 2500);
 };
 for (const ev of ['keydown', 'pointerdown'] as const) window.addEventListener(ev, () => audio.start(), { capture: true });
-const surfaceAt = (x: number, z: number): Surface => (waterDepthAt(x, z) > 0.02 ? 'water' : 'packedDirt');
+// Footsteps by what the foot comes down on (demo: dirt, sandstone, wood, mud, water).
+const SURFACE = { water: 'water', mud: 'mud', rock: 'sandstone', log: 'wood', dirt: 'packedDirt' } as const;
+const surfaceAt = (x: number, z: number): Surface => SURFACE[surfaceKind(x, z)];
 const tract = (): number => tractOf(p.body.size) * (p.species.length / 5.2);
 
 // Footsteps rumble the controller by weight, speed and direction (relative to the camera).
@@ -98,6 +104,7 @@ const panOf = (x: number, z: number): number => {
   return (dx * Math.cos(cam.yaw) - dz * Math.sin(cam.yaw)) / d; // camera right is (cos yaw, -sin yaw)
 };
 herrera.onStep = (foot: { x: number; y: number; z: number }) => {
+  coatView.step(foot, p);
   rumble.own(p.body.mass, p.speed, p.body.sprintMax, performance.now(), inputState.device === 'touch');
   // Your own small feet are close-miked: a hatchling's steps are physically almost silent. Only the mix.
   audio.step('player', foot, p.body.mass, p.speed, surfaceAt(foot.x, foot.z), clamp((350 / p.body.mass) ** 0.3, 1, 3.5));
@@ -105,7 +112,7 @@ herrera.onStep = (foot: { x: number; y: number; z: number }) => {
 herrera.onSound = (kind: 'lap' | 'drip' | 'gulp' | 'sniff' | 'tear' | 'thud', at: { x: number; y: number; z: number }) => audio.body(kind, at, p.body.mass);
 const feel = (who: 'prey' | 'saurosuchus', mass: number) => (x: number, z: number, speed: number, quiet: number): void => {
   rumble.step(mass, speed, Math.hypot(x - p.x, z - p.z), panOf(x, z), quiet, performance.now(), inputState.device === 'touch');
-  audio.step(who, { x, y: heightAt(x, z), z }, mass * quiet * quiet, speed, surfaceAt(x, z));
+  audio.step(who, { x, y: groundAt(x, z), z }, mass * quiet * quiet, speed, surfaceAt(x, z));
 };
 herbMeshes.onStep = feel('prey', HYPERODAPEDON.mass);
 sauroMeshes.onStep = feel('saurosuchus', SAUROSUCHUS.mass);
@@ -197,7 +204,7 @@ function frame(now: number): void {
     if (p.egg < eggBefore) {
       // A press tore the shell: wobble, scraps, a tearing sound and a growing jolt; a bigger one as it bursts open.
       eggView.tear(p);
-      audio.body('tear', { x: p.x, y: heightAt(p.x, p.z) + 0.3, z: p.z }, p.body.mass);
+      audio.body('tear', { x: p.x, y: groundAt(p.x, p.z) + 0.3, z: p.z }, p.body.mass);
       const k = 1 - p.egg / 4;
       rumble.hit(0.3, 0.2 + 0.2 * k, p.egg ? 120 : 300, performance.now(), inputState.device === 'touch');
     }
@@ -248,10 +255,10 @@ function frame(now: number): void {
 
   // Snout target when eating: the top of the nearest carcass.
   let dipY: number | undefined;
-  if (p.act === 'browse' || p.act === 'dig') dipY = heightAt(p.x, p.z) + 0.15 * p.body.hip;
+  if (p.act === 'browse' || p.act === 'dig') dipY = groundAt(p.x, p.z) + 0.15 * p.body.hip;
   if (p.act === 'eat') {
     const c = world.carcasses.reduce((b, k) => (Math.hypot(k.x - p.x, k.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? k : b), world.carcasses[0]);
-    if (c) dipY = heightAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
+    if (c) dipY = groundAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
   }
   fx.hurtT += dt;
   const held = fx.hold > 0;
@@ -259,8 +266,9 @@ function frame(now: number): void {
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
     biteT: held ? fx.heldBiteT : p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
     biteHit: fx.biteHit, hurtT: fx.hurtT, hurtSide: fx.hurtSide, hurtK: fx.hurtK,
-    air: Math.max(0, y - heightAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, held ? 0 : dt);
+    air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, held ? 0 : dt);
   blood.update(dt);
+  coatView.update(p, herrera, dt);
   view.setTime(dayTime(world.tick * TICK_DT));
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);
@@ -268,10 +276,10 @@ function frame(now: number): void {
   cam.zoom = p.egg > 0 ? 1.8 : 1;
   smallMeshes.update(world.smalls, world.grubs, world.tick * TICK_DT, a, dt);
   sauroMeshes.update(world.sauros, a, dt);
-  carcassMeshes.sync(world.carcasses, heightAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);
+  carcassMeshes.sync(world.carcasses, groundAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);
   // Saurosuchus bodies (head to tail) block the camera.
   const blockers = world.sauros.map((s) => {
-    const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), gy = heightAt(s.x, s.z) + 1.0;
+    const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), gy = groundAt(s.x, s.z) + 1.0;
     return { ax: s.x + fx * 3, ay: gy, az: s.z + fz * 3, bx: s.x - fx * 2.5, by: gy, bz: s.z - fz * 2.5, r: 1.3 };
   });
   fx.jolt = Math.max(0, fx.jolt - dt * 6);
@@ -286,18 +294,19 @@ function frame(now: number): void {
   view.render(dt);
   const near = nearby();
   const goal = live ? objectiveOf(world) : null;
-  marker.update(goal?.at ?? null, goal?.at ? heightAt(goal.at.x, goal.at.z) : 0, goal?.at ? Math.hypot(goal.at.x - p.x, goal.at.z - p.z) : 0, dt);
+  marker.update(goal?.at ?? null, goal?.at ? groundAt(goal.at.x, goal.at.z) : 0, goal?.at ? Math.hypot(goal.at.x - p.x, goal.at.z - p.z) : 0, dt);
   ui.update(world, near, cam.yaw, goal, dt);
+  document.getElementById('coat')!.textContent = coatText(p);
   rumble.flush(now, dt, live && p.alive && inputState.device === 'pad');
   {
     const s0 = world.sauros[0];
     const snout = herrera.snout();
-    audio.update(view.camera.position, cam.yaw, snout, s0 ? { x: s0.x, y: heightAt(s0.x, s0.z) + 1, z: s0.z } : null, tract());
+    audio.update(view.camera.position, cam.yaw, snout, s0 ? { x: s0.x, y: groundAt(s0.x, s0.z) + 1, z: s0.z } : null, tract());
   }
   requestAnimationFrame(frame);
 }
 // ?debug exposes the world and camera for automated checks (screenshots, headless playtests).
-if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, start: () => { started = true; ui.showIntro(false); } };
+if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, groundAt, start: () => { started = true; ui.showIntro(false); } };
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.

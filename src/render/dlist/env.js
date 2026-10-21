@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { clamp, lerp, smooth } from '../../sim/math';
 import { fbm, vnoise } from '../../sim/noise';
 import { rng } from '../../sim/rng';
-import { heightAt, PONDS, SPAWNS, WATER_Y, MAP_RADIUS } from '../../sim/terrain';
+import { heightAt, MUDS, MUD_Y, PONDS, SPAWNS, WATER_Y, MAP_RADIUS } from '../../sim/terrain';
 import { TREES } from '../../sim/flora';
+import { groundAt } from '../../sim/ground';
 import { WIND } from '../../sim/scent';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -135,6 +136,10 @@ export function buildTerrain(scene) {
     c.lerp(cGrey, smooth(0.5, 0.7, fbm(x * 0.02 + 4, z * 0.02, 33)) * smooth(28, 50, r) * 0.8);
     c.lerp(cMoss, smooth(0.52, 0.68, fbm(x * 0.14, z * 0.14, 44)) * (1 - smooth(0.12, 0.3, slope)) * 0.85);
     c.lerp(cRock, smooth(0.22, 0.45, slope));
+    for (const m of MUDS) {
+      const dm = Math.hypot(x - m.x, z - m.z);
+      if (dm < m.r + 4) c.lerp(cBank, (1 - smooth(m.r - 1, m.r + 4, dm)) * 0.8); // trampled, wet edges
+    }
     for (const w of PONDS) {
       const dp = Math.hypot(x - w.x, z - w.z);
       if (dp < w.r + 5) c.lerp(cBank, (1 - smooth(0.0, 0.45, h - WATER_Y)) * (1 - smooth(w.r, w.r + 5, dp)));
@@ -147,6 +152,24 @@ export function buildTerrain(scene) {
   const terrain = new THREE.Mesh(g, m);
   terrain.receiveShadow = true;
   scene.add(terrain);
+}
+
+// The mud pit's surface (demo): dark, glossy wet mud with a lumpy bump, at MUD_Y over the carved hollow.
+export function buildMud(scene) {
+  const bump = noiseTexture(256, 12, 12, 0, 1);
+  bump.repeat.set(5, 5);
+  const mm = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2e2015'), roughness: 0.45, metalness: 0, bumpMap: bump, bumpScale: 2.5, envMapIntensity: 0.9 });
+  for (const M of MUDS) {
+    const mg = new THREE.CircleGeometry(M.r + 1.2, 80);
+    mg.rotateX(-Math.PI / 2);
+    const mp = mg.attributes.position;
+    for (let i = 0; i < mp.count; i++) mp.setY(i, (vnoise(mp.getX(i) * 1.3, mp.getZ(i) * 1.3, 61) - 0.5) * 0.03);
+    mg.computeVertexNormals();
+    const mud = new THREE.Mesh(mg, mm);
+    mud.position.set(M.x, MUD_Y, M.z);
+    mud.receiveShadow = true;
+    scene.add(mud);
+  }
 }
 
 /* ============================== water ============================== */
@@ -314,7 +337,7 @@ export function buildPlants(scene) {
   for (let i = 0; i < 2400 && la.length + lb.length < 1300; i++) {
     const [x, z] = ringPoint(3, 80);
     const h = heightAt(x, z);
-    if (h < WATER_Y + 0.12 || nearSpawn(x, z, 3)) continue;
+    if (h < WATER_Y + 0.12 || nearSpawn(x, z, 3) || MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.5) || groundAt(x, z) > h + 0.05) continue;
     const clump = fbm(x * 0.09, z * 0.09, 71);
     if (R() > smooth(0.35, 0.6, clump) + 0.12) continue;
     (R() < 0.55 ? la : lb).push({ x, y: h - 0.03, z, s: lerp(0.65, 1.45, R()), ry: R() * 6.28 });
@@ -380,15 +403,15 @@ export function buildPlants(scene) {
   addWind(crownMat, 0.012, 'crown');
   scatter(scene, crown, crownMat, dl);
 
-  // Rocks: red sandstone and grey mudstone. Pebbles and low stones only for now: they're
-  // scenery until rocks become footing (the demo's step-up and stumble systems).
+  // Pebbles: scenery only, too small to matter underfoot. The rocks and logs that are footing come from the sim
+  // (sim/ground.ts, drawn by render/rocks.ts).
   const rockGeo = (() => { const g = new THREE.IcosahedronGeometry(1, 1); const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 0.75 + 0.5 * vnoise(x * 1.7 + 3, z * 1.7 + y, 91); p.setXYZ(i, x * k, y * k * 0.7, z * k); }
     g.computeVertexNormals(); return g; })();
   const rl = [], gr = rng(77);
   for (let i = 0; i < 600 && rl.length < 90; i++) {
     const [x, z] = ringPoint(8, 80);
-    if (PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + 2) || nearSpawn(x, z, 6)) continue;
+    if (PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + 2) || MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1) || nearSpawn(x, z, 6)) continue;
     const s = lerp(0.12, 0.35, R());
     rl.push({ x, y: heightAt(x, z) - s * 0.3, z, s, ry: R() * 6.28, tx: (gr() - 0.5) * 0.3, tz: (gr() - 0.5) * 0.3 });
   }

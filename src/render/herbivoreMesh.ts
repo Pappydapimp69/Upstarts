@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { damp, smooth } from '../sim/math';
-import { heightAt } from '../sim/terrain';
+import { groundAt as heightAt } from '../sim/ground';
 import type { Herbivore } from '../sim/herbivore';
 import { animateLegs, buildHyperodapedon, type Body } from './creatures';
 

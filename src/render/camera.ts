@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, damp, lerp, smooth, wrapAngle } from '../sim/math';
-import { heightAt } from '../sim/terrain';
+import { groundAt as heightAt } from '../sim/ground';
 import type { Command } from '../sim/dino';
 import type { RawInput } from '../input/input';
 

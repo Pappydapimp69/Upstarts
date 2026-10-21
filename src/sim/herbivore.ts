@@ -2,6 +2,7 @@ import { clamp, damp, lerp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
+import { pushOutOfRocks } from './ground';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
 import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
@@ -238,6 +239,7 @@ export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds:
     nz *= MAP_RADIUS / r;
   }
   [nx, nz] = pushOutOfTrees(nx, nz, 0.4);
+  [nx, nz] = pushOutOfRocks(nx, nz, 0.4, HYPERODAPEDON.hip);
   h.x = nx;
   h.z = nz;
 }

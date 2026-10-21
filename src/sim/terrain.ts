@@ -16,6 +16,11 @@ export interface Pond {
 }
 export const PONDS: Pond[] = [{ x: 15, z: -9, r: 11, depth: 1.7, flat: 11 }];
 
+// The demo's mud pit (floodplain map): a soft hollow whose floor sits under a level of wet mud.
+export const MUD_Y = 0.36;
+export const MUDS: Pond[] = [{ x: -14, z: 4, r: 6.5, depth: 0.85, flat: 8 }];
+export const inMudPit = (x: number, z: number): boolean => MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.2);
+
 // Where new animals hatch. Kept clear of trees.
 export const SPAWNS = [
   { x: 0, z: 15, yaw: Math.PI },
@@ -33,10 +38,17 @@ export function heightAt(x: number, z: number): number {
     h = lerp(h, 0.36 + (h - 0.36) * 0.2, 1 - smooth(w.r + 2, w.r + w.flat, d));
     h = lerp(h, WATER_Y - w.depth, 1 - smooth(w.r * 0.2, w.r + 1.5, d));
   }
+  for (const m of MUDS) {
+    const d = Math.hypot(x - m.x, z - m.z);
+    h = lerp(h, 0.42 + (h - 0.42) * 0.2, 1 - smooth(m.r + 1, m.r + m.flat, d));
+    h = lerp(h, MUD_Y - m.depth, 1 - smooth(m.r * 0.15, m.r + 0.6, d));
+  }
   return h;
 }
 
+// Only in a pond: the mud pit's floor is below the water level too, but it holds mud, not water.
 export function waterDepthAt(x: number, z: number): number {
+  if (!PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + 2)) return 0;
   return Math.max(0, WATER_Y - heightAt(x, z));
 }
 

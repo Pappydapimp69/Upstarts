@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { damp, smooth } from '../sim/math';
-import { heightAt } from '../sim/terrain';
+import { groundAt as heightAt } from '../sim/ground';
 import { SAUROSUCHUS, type Sauro } from '../sim/saurosuchus';
 import { animateLegs, buildSaurosuchus, type Body } from './creatures';
 

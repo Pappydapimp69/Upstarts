@@ -2,6 +2,7 @@ import { clamp, damp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
+import { pushOutOfRocks } from './ground';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
 import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
@@ -329,6 +330,7 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
     nz *= MAP_RADIUS / r;
   }
   [nx, nz] = pushOutOfTrees(nx, nz, 0.9);
+  [nx, nz] = pushOutOfRocks(nx, nz, 0.9, S.hip);
   s.x = nx;
   s.z = nz;
 }

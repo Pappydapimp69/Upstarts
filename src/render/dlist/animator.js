@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { clamp, damp, lerp, smooth, wrapAngle } from '../../sim/math';
 import { heightAt, WATER_Y } from '../../sim/terrain';
+import { groundAt } from '../../sim/ground';
 import { WIND_FROM_YAW } from '../../sim/scent';
 import { buildHerrerasaurus, skinU } from './herrerasaurus.js';
 import { LOOKS } from './shapes.js';
@@ -61,7 +62,7 @@ export class HerreraAnimator {
     this.size = size;
     for (const L of this.dino.legs) {
       const w = L.neutral.clone().multiplyScalar(size).applyAxisAngle(UP, yaw).add(V(x, 0, z));
-      w.y = heightAt(w.x, w.z) + 0.035 * size;
+      w.y = groundAt(w.x, w.z) + 0.035 * size;
       L.planted.copy(w); L.footPos.copy(w); L.liftPos.copy(w); L.swing = false; L.groundY = w.y - 0.035 * size;
       L.liftS = 0; L.stanceU = 0; L.centre = 0;
     }
@@ -92,7 +93,12 @@ export class HerreraAnimator {
     const duty = 0.5 + 0.14 * Math.tanh((0.5 - Fr) / 0.25);
     const legL = LEG * sz;
     const stride = Math.max(0.8 * sz, 2.3 * legL * Math.pow(v * v / (9.81 * legL), 0.3));
-    const rootG = heightAt(s.x, s.z);
+    // Feet stand on rocks and logs; the body's reference height follows the footing under it, eased so stepping
+    // half onto a slab doesn't pop the whole body up (the feet and bodyY carry the step).
+    const gHere = groundAt(s.x, s.z);
+    if (this.rootG === undefined || far || Math.abs(gHere - this.rootG) > 2 * sz) this.rootG = gHere;
+    else this.rootG = damp(this.rootG, gHere, 10, dt);
+    const rootG = this.rootG;
     const legs = dino.legs, L0 = legs[0], L1 = legs[1];
     const neutralW = (L) => L.neutral.clone().multiplyScalar(sz).applyAxisAngle(UP, s.yaw).add(pos);
     const air = s.air || 0;
@@ -111,7 +117,7 @@ export class HerreraAnimator {
       D.wasAir = false; D.airT = 0; D.land = 1;
       for (const L of legs) {
         const w = neutralW(L);
-        L.footPos.set(w.x, heightAt(w.x, w.z) + 0.035 * sz, w.z);
+        L.footPos.set(w.x, groundAt(w.x, w.z) + 0.035 * sz, w.z);
         L.planted.copy(L.footPos); L.swing = false; L.groundY = L.footPos.y - 0.035 * sz;
         this.onStep?.(L.planted, L.sx);
       }
@@ -124,7 +130,7 @@ export class HerreraAnimator {
       for (const L of legs) {
         const q = (((D.phase + L.off) % 1) + 1) % 1;
         if (q < duty) {
-          if (L.swing) { L.planted.copy(L.footPos); L.planted.y = heightAt(L.planted.x, L.planted.z) + 0.035 * sz; this.onStep?.(L.planted, L.sx); } // touchdown
+          if (L.swing) { L.planted.copy(L.footPos); L.planted.y = groundAt(L.planted.x, L.planted.z) + 0.035 * sz; this.onStep?.(L.planted, L.sx); } // touchdown
           L.swing = false;
           L.footPos.copy(L.planted); L.liftS = 0; L.stanceU = q / duty; L.groundY = L.planted.y - 0.035 * sz;
           continue;
@@ -139,12 +145,12 @@ export class HerreraAnimator {
         const lx = L.neutral.x * sz, lz = L.neutral.z * sz + L.centre + lean;
         const landX = s.x + lx * Math.cos(yawL) + lz * Math.sin(yawL) + Math.sin(ym) * v * rem;
         const landZ = s.z - lx * Math.sin(yawL) + lz * Math.cos(yawL) + Math.cos(ym) * v * rem;
-        const gL = heightAt(landX, landZ);
+        const gL = groundAt(landX, landZ);
         const e = sw * sw * (3 - 2 * sw);
         L.footPos.x = lerp(L.liftPos.x, landX, e); L.footPos.z = lerp(L.liftPos.z, landZ, e);
         const baseY = lerp(L.liftPos.y, gL + 0.035 * sz, e);
         L.footPos.y = baseY + Math.sin(Math.PI * sw) * Math.min(0.42, 0.12 + 0.045 * vN) * sz;
-        L.liftS = sw; L.stanceU = 0; L.groundY = heightAt(L.footPos.x, L.footPos.z);
+        L.liftS = sw; L.stanceU = 0; L.groundY = groundAt(L.footPos.x, L.footPos.z);
       }
     }
 

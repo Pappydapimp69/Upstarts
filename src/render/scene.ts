@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { buildPlants, buildSkyAndLights, buildTerrain, buildWater, FOG_COLOR, setupRenderer, SUN_DIR, uTime } from './dlist/env.js';
+import { buildMud, buildPlants, buildSkyAndLights, buildTerrain, buildWater, FOG_COLOR, setupRenderer, SUN_DIR, uTime } from './dlist/env.js';
 import { daylight, sunDir, sunElevation } from '../sim/clock';
+import { buildRocks } from './rocks';
 import { lerp, smooth } from '../sim/math';
 
 export class SceneView {
@@ -23,6 +24,8 @@ export class SceneView {
     buildTerrain(this.scene);
     buildWater(this.scene);
     buildPlants(this.scene);
+    buildRocks(this.scene);
+    buildMud(this.scene);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());

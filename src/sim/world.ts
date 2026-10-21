@@ -3,6 +3,7 @@
 import { createDino, IDLE, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
 import { NEEDS, needPace, stepNeeds } from './needs';
 import { browseAt, pushOutOfTrees } from './flora';
+import { groundAt, pushOutOfRocks, TIER } from './ground';
 import { heightAt, SPAWNS, TOO_DEEP, waterDepthAt } from './terrain';
 import { SPECIES, type SpeciesId } from './species';
 import { clamp, lerp, smooth, wrapAngle } from './math';
@@ -347,7 +348,7 @@ function findWater(d: Dino): { yaw: number; dist: number } | null {
   return best;
 }
 
-const groundY = (x: number, z: number): number => heightAt(x, z);
+const groundY = (x: number, z: number): number => groundAt(x, z);
 // The snout of an animal standing at (x, z) facing yaw, reach metres ahead and `up` above the ground.
 function mouth(x: number, z: number, yaw: number, reach: number, up: number): { x: number; y: number; z: number } {
   const mx = x + Math.sin(yaw) * reach, mz = z + Math.cos(yaw) * reach;
@@ -511,12 +512,19 @@ function stepKnocks(w: World, dt: number): void {
   const fade = Math.exp(-6 * dt);
   for (const k of w.knocks) {
     const slot = w.players.find((s) => s.entity === k.id);
-    const body: { x: number; z: number } | undefined = slot ? (slot.dino.alive ? slot.dino : undefined)
-      : w.herbivores.find((h) => h.id === k.id) ?? w.smalls.find((m) => m.id === k.id && exposed(m)) ?? w.sauros.find((s) => s.id === k.id);
+    const herb = slot ? undefined : w.herbivores.find((h) => h.id === k.id);
+    const small = slot || herb ? undefined : w.smalls.find((m) => m.id === k.id && exposed(m));
+    const sauro = slot || herb || small ? undefined : w.sauros.find((s) => s.id === k.id);
+    const body: { x: number; z: number } | undefined = slot ? (slot.dino.alive ? slot.dino : undefined) : herb ?? small ?? sauro;
+    const hip = slot ? slot.dino.body.hip : herb ? HYPERODAPEDON.hip : small ? SMALL[small.kind].hip : SAUROSUCHUS.hip;
     if (body) {
       const nx = body.x + k.vx * dt, nz = body.z + k.vz * dt;
-      if (waterDepthAt(nx, nz) < TOO_DEEP) [body.x, body.z] = pushOutOfTrees(nx, nz, 0.4);
-      if (slot) slot.dino.y = heightAt(body.x, body.z) + slot.dino.air;
+      // Shoved, not walking: it goes nowhere it couldn't step to (deep water, a trunk, a rock face).
+      const feet = slot ? slot.dino.y - slot.dino.air : groundAt(body.x, body.z);
+      if (waterDepthAt(nx, nz) < TOO_DEEP && groundAt(nx, nz) - feet < TIER.step * hip) {
+        [body.x, body.z] = pushOutOfRocks(...pushOutOfTrees(nx, nz, 0.4), 0.4, hip);
+        if (slot && !slot.dino.jump) slot.dino.y = groundAt(body.x, body.z);
+      }
     }
     k.vx *= fade;
     k.vz *= fade;

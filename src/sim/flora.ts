@@ -1,7 +1,7 @@
 import { lerp, smooth } from './math';
 import { fbm } from './noise';
 import { rng } from './rng';
-import { heightAt, PONDS, SPAWNS, waterDepthAt } from './terrain';
+import { heightAt, MUDS, PONDS, SPAWNS, waterDepthAt } from './terrain';
 
 // Trees are solid, so where they stand is part of the sim: a fixed seed, the same
 // for every player. Layout and counts follow the Dlist demo's valley.
@@ -18,6 +18,7 @@ export interface Tree {
 
 function clearOf(x: number, z: number, pad: number): boolean {
   if (PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + pad)) return false;
+  if (MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + pad)) return false;
   if (SPAWNS.some((p) => Math.hypot(x - p.x, z - p.z) < 6)) return false;
   return true;
 }
@@ -54,7 +55,7 @@ export const TREES: Tree[] = build();
 
 // Fern cover for browsing: the same clump field the renderer scatters ferns by. 0 bare .. 1 thick.
 export function browseAt(x: number, z: number): number {
-  if (waterDepthAt(x, z) > 0) return 0;
+  if (waterDepthAt(x, z) > 0 || MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.5)) return 0;
   return smooth(0.35, 0.6, fbm(x * 0.09, z * 0.09, 71));
 }
 

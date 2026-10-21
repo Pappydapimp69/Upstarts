@@ -1,6 +1,7 @@
 import { clamp, damp, wrapAngle } from './math';
 import { MAP_RADIUS, SPAWNS, waterDepthAt } from './terrain';
 import { browseAt, pushOutOfTrees, TREES } from './flora';
+import { pushOutOfRocks } from './ground';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
 import type { Predator } from './herbivore';
@@ -205,6 +206,7 @@ export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: n
   s.yaw = wrapAngle(s.yaw + clamp(wrapAngle(yaw - s.yaw), -turn, turn));
   s.speed = damp(s.speed, target, 6, dt);
   [s.x, s.z] = pushOutOfTrees(s.x + Math.sin(s.yaw) * s.speed * dt, s.z + Math.cos(s.yaw) * s.speed * dt, sp.length * 0.3);
+  [s.x, s.z] = pushOutOfRocks(s.x, s.z, sp.length * 0.3, sp.hip);
 }
 
 function setState(s: Small, st: SmallState): void {
