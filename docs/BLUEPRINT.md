@@ -128,6 +128,11 @@ or insects as ambient life.
 - Day/night cycle (D11): **60 minutes of daylight, then 20 minutes of night** (an 80-minute
   cycle). The sun spends 40 of the daylight minutes within ±15° of its highest point; dawn
   and dusk share the other 20. Night is dark and dangerous.
+- **Night belongs to the dinosaurs (D14).** Every non-dinosaur reptile (*Saurosuchus*,
+  *Hyperodapedon* and the other crocodile-line and lizard-like animals) sleeps through the
+  night. Dinosaurs, the player included, stay active. *Guess, labelled:* early dinosaurs
+  probably had a higher metabolism (fast bone growth), but this is debated, and some
+  crocodile-line reptiles may have run warm too. It's a gameplay choice built on a likely idea.
 - Wet/dry season cycle over several in-game days.
 - Weather: rain, fog, ashfall.
 
@@ -428,6 +433,7 @@ time on art (M5).**
 | D11 | Day/night: 60 min of daylight (the sun within ±15° of its highest point for 40 of them), then 20 min of night. | LOCKED |
 | D12 | Survival stats: hunger, thirst, stamina, health; injuries later; no temperature in v1. | LOCKED |
 | D13 | After a death only records carry over (longest life, kills). No unlocks or skins. | LOCKED |
+| D14 | Non-dinosaur reptiles sleep at night; dinosaurs, the player included, stay active. | LOCKED |
 
 ---
 
