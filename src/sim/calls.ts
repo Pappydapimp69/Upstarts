@@ -31,6 +31,7 @@ const TABLE = {
   winded: { label: 'Winded roar', note: 'low stamina', mode: 'open', duration: 0.9, f0k: 0.7, f0Endk: 0.45, roughness: 0.35, breath: 0.6, amp: 2.0, level: 100, challenge: true },
   parched: { label: 'Parched roar', note: 'thirsty', mode: 'open', duration: 1.3, f0k: 0.8, f0Endk: 0.6, roughness: 0.8, breath: 0.55, amp: 2.6, level: 104, challenge: true },
   hungry: { label: 'Hungry roar', note: 'starving', mode: 'open', duration: 2.0, f0k: 0.6, f0Endk: 0.45, roughness: 0.7, breath: 0.2, amp: 3.2, level: 108, challenge: true },
+  chirp: { label: 'Chirp', note: 'hatchling', mode: 'open', duration: 0.2, f0k: 1.0, roughness: 0.25, breath: 0.5, jitter: 1, amp: 1.2, level: 85 },
   yelp: { label: 'Yelp', note: 'hurt', mode: 'open', duration: 0.3, f0k: 1.0, f0Endk: 0.7, roughness: 0.6, breath: 0.4, amp: 2.0, level: 92 },
 } satisfies Record<string, CallDef>;
 

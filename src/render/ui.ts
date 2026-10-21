@@ -1,6 +1,6 @@
 // HUD and menus in the Dlist demo's field-specimen style (index.html holds the markup and CSS).
 import type { Dino } from '../sim/dino';
-import type { World } from '../sim/world';
+import { EGG, type World } from '../sim/world';
 import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
 import { SPECIES, SPECIES_ORDER, type SpeciesId } from '../sim/species';
@@ -159,7 +159,7 @@ export class Ui {
     };
     for (const [k, el] of this.vals) el.textContent = txt[k];
     const sp = d.speed;
-    this.el('pace').textContent = !d.alive ? 'Dead'
+    this.el('pace').textContent = !d.alive ? 'Dead' : d.egg > 0 ? 'Inside the egg'
       : sp < 0.15 ? 'Standing' : `${sp < 0.68 * d.body.sprintMax ? (sp < 1.6 * d.body.size ** 0.5 ? 'Walking' : 'Running') : 'Sprinting'} · ${sp.toFixed(1)} m/s`;
 
     const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs' : d.act === 'bite' ? 'Biting'
@@ -167,7 +167,8 @@ export class Ui {
       : d.act === 'sniff' ? (d.sniff ? (d.sniff.strength > 0.5 ? 'Strong scent on the wind' : 'Faint scent on the wind') : 'Nothing on the wind')
       : near.prey ? `Hold <b>${btn.eat}</b> to bite` : near.water ? `Hold <b>${btn.drink}</b> to drink`
       : near.food ? `Hold <b>${btn.eat}</b> to eat` : near.browse ? `Hold <b>${btn.eat}</b> to browse the ferns` : '';
-    this.el('prompt').innerHTML = d.alive ? hint : '';
+    const tear = `Press <b>${btn.go === 'tap' ? 'A' : btn.go}</b> again and again to tear free of the egg · ${EGG.presses - d.egg} of ${EGG.presses}`;
+    this.el('prompt').innerHTML = !d.alive ? '' : d.egg > 0 ? tear : hint;
 
     // Sniffing: an arrow pointing the way the scent comes from, relative to the camera.
     const arrow = this.el('scent');

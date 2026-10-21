@@ -106,14 +106,15 @@ export interface World {
   startGrowth: number; // what new animals hatch at (0 = hatchling)
   speciesId: SpeciesId; // what the local player hatches as next (accessor)
   events: SoundEvent[]; // sounds made this tick; the client drains them
+  eggs: boolean; // new hatchlings start inside an egg (the game; tests start hatched)
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
-export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus'): World {
+export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus', eggs = false): World {
   const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37) };
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale,
-    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [],
+    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs,
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -248,9 +249,14 @@ function smell(w: World, d: Dino): { yaw: number; strength: number } | null {
   return best;
 }
 
-function spawnDino(rand: () => number, growth: number, id: SpeciesId): Dino {
-  const s = SPAWNS[Math.floor(rand() * SPAWNS.length)];
-  return createDino(SPECIES[id], s.x, s.z, s.yaw, growth);
+// Hatch sequence (Dlist tutorial egg): a soft leathery egg the hatchling tears out of with repeated presses.
+export const EGG = { presses: 4 };
+
+function spawnDino(w: World, id: SpeciesId): Dino {
+  const s = SPAWNS[Math.floor(w.rng.spawn() * SPAWNS.length)];
+  const d = createDino(SPECIES[id], s.x, s.z, s.yaw, w.startGrowth);
+  if (w.eggs && w.startGrowth === 0) d.egg = EGG.presses;
+  return d;
 }
 
 // Somewhere on the dry valley floor.
@@ -296,7 +302,7 @@ function mouth(x: number, z: number, yaw: number, reach: number, up: number): { 
 // Join a player: a new slot with a fresh hatchling. Returns the slot.
 export function addPlayer(w: World, speciesId: SpeciesId): PlayerSlot {
   const id = w.players.length;
-  const slot: PlayerSlot = { id, entity: PLAYER_ID - id, speciesId, dino: spawnDino(w.rng.spawn, w.startGrowth, speciesId), lives: 1, lastDeath: null };
+  const slot: PlayerSlot = { id, entity: PLAYER_ID - id, speciesId, dino: spawnDino(w, speciesId), lives: 1, lastDeath: null };
   slot.dino.owner = id;
   w.players.push(slot);
   return slot;
@@ -306,7 +312,7 @@ export function addPlayer(w: World, speciesId: SpeciesId): PlayerSlot {
 export function hatchAs(w: World, id: SpeciesId, player = 0): void {
   const slot = w.players[player];
   slot.speciesId = id;
-  slot.dino = spawnDino(w.rng.spawn, w.startGrowth, id);
+  slot.dino = spawnDino(w, id);
   slot.dino.owner = slot.id;
 }
 
@@ -335,9 +341,22 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
       if (cmd.species) slot.speciesId = cmd.species;
-      slot.dino = spawnDino(w.rng.spawn, w.startGrowth, slot.speciesId);
+      slot.dino = spawnDino(w, slot.speciesId);
       slot.dino.owner = slot.id;
       slot.lives++;
+    }
+  } else if (d.egg > 0) {
+    // Inside the egg: no movement or actions of any kind (blocked here, not left to each action to ignore;
+    // ZaneGPT review), but still a body something can find and bite. Each press tears the shell and chirps.
+    d.act = 'none';
+    stepDino(d, IDLE, dt);
+    d.callT += dt;
+    if (cmd.respawn) {
+      d.egg--;
+      const level = callLevel('chirp', d.body.mass);
+      w.events.push({ kind: 'call', who: 'player', call: 'chirp', id: slot.entity, x: d.x, y: groundY(d.x, d.z) + 0.6 * d.body.hip, z: d.z, level });
+      d.callT = 0;
+      d.callDur = CALLS.chirp.duration;
     }
   } else {
     // Hold to drink or eat. Drinking wins if both are in reach.

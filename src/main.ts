@@ -11,6 +11,7 @@ import { CarcassMeshes } from './render/worldMeshes';
 import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { SmallMeshes } from './render/smallMesh';
+import { EggView } from './render/eggMesh';
 import { visibleFraction } from './render/visibility';
 import { exposed, SMALL } from './sim/smallprey';
 import { SauroMeshes } from './render/sauroMesh';
@@ -25,7 +26,7 @@ import { initInput, readInput } from './input/input';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
-const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0);
+const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
 const ui = new Ui();
 if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
 const view = new SceneView(document.body);
@@ -33,6 +34,8 @@ const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
 const herbMeshes = new HerbivoreMeshes();
 view.scene.add(herbMeshes.group);
+const eggView = new EggView();
+view.scene.add(eggView.group);
 const smallMeshes = new SmallMeshes();
 view.scene.add(smallMeshes.group);
 const sauroMeshes = new SauroMeshes();
@@ -139,6 +142,7 @@ function frame(now: number): void {
       }
       started = true;
       ui.showIntro(false);
+      inp.confirm = false; // the press that started the game must not also tear the egg
     }
     acc = 0;
   } else if (paused) {
@@ -146,6 +150,7 @@ function frame(now: number): void {
     if (inp.confirm || inp.menu) {
       paused = false;
       ui.showPause(false);
+      inp.confirm = false; // nor the one that resumed it
     }
     acc = 0;
   } else if (inp.menu) {
@@ -169,7 +174,15 @@ function frame(now: number): void {
     herbMeshes.beforeTick(world.herbivores);
     smallMeshes.beforeTick(world.smalls);
     sauroMeshes.beforeTick(world.sauros);
+    const eggBefore = p.egg;
     step(world, cmd);
+    if (p.egg < eggBefore) {
+      // A press tore the shell: wobble, scraps, a tearing sound and a growing jolt; a bigger one as it bursts open.
+      eggView.tear(p);
+      audio.body('tear', { x: p.x, y: heightAt(p.x, p.z) + 0.3, z: p.z }, p.body.mass);
+      const k = 1 - p.egg / 4;
+      rumble.hit(0.3, 0.2 + 0.2 * k, p.egg ? 120 : 300, performance.now(), inputState.device === 'touch');
+    }
     for (const ev of world.events) {
       audio.play(ev, tract());
       // Haptic jolts: your bite landing, and being bitten (harder, longer).
@@ -202,6 +215,9 @@ function frame(now: number): void {
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
     biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY }, dt);
   herbMeshes.update(world.herbivores, a, dt);
+  eggView.update(p, dt);
+  herrera.root.visible = p.egg === 0;
+  cam.zoom = p.egg > 0 ? 1.8 : 1;
   smallMeshes.update(world.smalls, world.grubs, world.tick * TICK_DT, a, dt);
   sauroMeshes.update(world.sauros, a, dt);
   carcassMeshes.sync(world.carcasses, heightAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);

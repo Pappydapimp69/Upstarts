@@ -14,7 +14,7 @@ export interface Command {
   sprint: number; // 0..1 trigger
   drink?: boolean; // held: drinks in reach of water, sniffs the air otherwise
   eat?: boolean; // held: bites live prey in front, eats a carcass otherwise
-  respawn?: boolean; // pressed, only read while dead
+  respawn?: boolean; // pressed: respawn while dead, tear at the shell while in the egg
   species?: SpeciesId; // what to hatch as on respawn
   call?: CallStyle | 'auto'; // pressed: a call from the wheel, or 'auto' for Y's condition roar
 }
@@ -47,12 +47,13 @@ export interface Dino {
   callDur: number; // length of that call, s
   gait: number; // footfalls so far (2 per stride), for footstep events
   sniff: { yaw: number; strength: number } | null; // strongest scent while sniffing
+  egg: number; // presses left to tear out of its egg (0: hatched). In the egg it can't move or act.
 }
 
 export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, egg: 0,
   };
 }
 

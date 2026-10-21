@@ -24,6 +24,7 @@ export class FollowCamera {
   yaw: number;
   pitch = 0.26;
   dist = 6.6;
+  zoom = 1; // extra pull-back (framing the egg)
   private idle = 0;
   private recentering = false;
   private fov = 55;
@@ -76,7 +77,7 @@ export class FollowCamera {
     this.target.z = damp(this.target.z, dino.z, 12, dt);
     this.target.y = damp(this.target.y, dino.y + 1.4 * size, 6, dt);
     // Pull in for a small animal, out for a big one.
-    this.dist = damp(this.dist, 6.6 * (0.2 + 0.8 * size), 2, dt);
+    this.dist = damp(this.dist, 6.6 * (0.2 + 0.8 * size) * this.zoom, 1.2, dt);
 
     const c = this.camera;
     c.position.set(
