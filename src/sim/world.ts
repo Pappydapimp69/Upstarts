@@ -71,7 +71,9 @@ export interface Death {
 export interface World {
   tick: number;
   seed: number;
-  rand: () => number;
+  // One seeded stream per system, so a change in how often one system draws never shifts another's rolls
+  // (Brain: test E2, prologue E22).
+  rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number };
   player: Dino;
   carcasses: Carcass[];
   nextId: number;
@@ -89,9 +91,9 @@ export interface World {
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
 export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus'): World {
-  const rand = rng(seed);
+  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1) };
   const w: World = {
-    tick: 0, seed, rand, player: spawnDino(rand, startGrowth, speciesId), speciesId, carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
+    tick: 0, seed, rng: streams, player: spawnDino(streams.spawn, startGrowth, speciesId), speciesId, carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
     herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth, events: [],
   };
   for (const h of SAUROS.homes) w.sauros.push(createSauro(w.nextId++, h.x, h.z));
@@ -101,7 +103,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
     const herd: Herd = { id: i, goalX: 0, goalZ: 0 };
     w.herds.push(herd);
     pickGoal(w, herd);
-    for (let k = 0; k < HERDS.size; k++) addHerbivore(w, herd, Math.cos(a) * 32 + (w.rand() - 0.5) * 10, Math.sin(a) * 32 + (w.rand() - 0.5) * 10);
+    for (let k = 0; k < HERDS.size; k++) addHerbivore(w, herd, Math.cos(a) * 32 + (w.rng.herd() - 0.5) * 10, Math.sin(a) * 32 + (w.rng.herd() - 0.5) * 10);
   }
   return w;
 }
@@ -112,7 +114,7 @@ function dry(x: number, z: number): boolean {
 
 function pickGoal(w: World, herd: Herd): void {
   for (let tries = 0; tries < 30; tries++) {
-    const a = w.rand() * Math.PI * 2, r = 10 + w.rand() * 45;
+    const a = w.rng.herd() * Math.PI * 2, r = 10 + w.rng.herd() * 45;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (dry(x, z)) {
       herd.goalX = x;
@@ -124,8 +126,8 @@ function pickGoal(w: World, herd: Herd): void {
 
 function addHerbivore(w: World, herd: Herd, x: number, z: number): void {
   w.herbivores.push({
-    id: w.nextId++, herd: herd.id, x, z, yaw: w.rand() * Math.PI * 2, speed: 0, health: 1, stamina: 1,
-    state: 'graze', stateT: w.rand() * 6, threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: w.rand() * Math.PI * 2,
+    id: w.nextId++, herd: herd.id, x, z, yaw: w.rng.herd() * Math.PI * 2, speed: 0, health: 1, stamina: 1,
+    state: 'graze', stateT: w.rng.herd() * 6, threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: w.rng.herd() * Math.PI * 2,
   });
 }
 
@@ -179,15 +181,15 @@ function spawnDino(rand: () => number, growth: number, id: SpeciesId): Dino {
 // Somewhere on the dry valley floor.
 function placeCarcass(w: World, x?: number, z?: number, meat?: number): void {
   for (let tries = 0; x === undefined && tries < 50; tries++) {
-    const a = w.rand() * Math.PI * 2, r = 6 + w.rand() * 30;
+    const a = w.rng.carcass() * Math.PI * 2, r = 6 + w.rng.carcass() * 30;
     const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
     if (waterDepthAt(cx, cz) > 0 || waterDepthAt(cx + 3, cz) > 0 || waterDepthAt(cx - 3, cz) > 0 || heightAt(cx, cz) > 2.5) continue;
     x = cx;
     z = cz;
   }
   if (x === undefined || z === undefined) return;
-  const m = meat ?? CARCASS.meatMin + w.rand() * (CARCASS.meatMax - CARCASS.meatMin);
-  placeCarcassAt(w, x, z, w.rand() * Math.PI * 2, m);
+  const m = meat ?? CARCASS.meatMin + w.rng.carcass() * (CARCASS.meatMax - CARCASS.meatMin);
+  placeCarcassAt(w, x, z, w.rng.carcass() * Math.PI * 2, m);
 }
 
 function placeCarcassAt(w: World, x: number, z: number, yaw: number, meat: number): void {
@@ -219,7 +221,7 @@ function mouth(x: number, z: number, yaw: number, reach: number, up: number): { 
 // Before the game starts: hatch the player as another species at a fresh spawn.
 export function hatchAs(w: World, id: SpeciesId): void {
   w.speciesId = id;
-  w.player = spawnDino(w.rand, w.startGrowth, id);
+  w.player = spawnDino(w.rng.spawn, w.startGrowth, id);
 }
 
 function killPlayer(w: World, cause: Death['cause']): void {
@@ -249,7 +251,7 @@ export function step(w: World, cmd: Command): void {
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
       if (cmd.species) w.speciesId = cmd.species;
-      w.player = spawnDino(w.rand, w.startGrowth, w.speciesId);
+      w.player = spawnDino(w.rng.spawn, w.startGrowth, w.speciesId);
       w.lives++;
     }
   } else {
@@ -386,7 +388,7 @@ export function step(w: World, cmd: Command): void {
   for (const s of w.sauros) {
     const was = s.state;
     stepSauro(s, {
-      now, rand: w.rand, quarry, carcasses: w.carcasses,
+      now, rand: w.rng.ai, quarry, carcasses: w.carcasses,
       bite: (id) => {
         w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 2.6, 0.9), level: 96 });
         if (id === PLAYER_ID) {
@@ -452,7 +454,7 @@ export function step(w: World, cmd: Command): void {
   const preds = [predatorOf(w.player), ...w.sauros.map(predatorOfSauro)];
   for (const h of w.herbivores) {
     const herd = w.herds[h.herd];
-    stepHerbivore(h, herd, w.herbivores, preds, w.rand, dt, now);
+    stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now);
   }
   for (const h of w.herbivores) {
     if (h.state === 'dead' && h.health > -1) placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat);
@@ -473,8 +475,8 @@ export function step(w: World, cmd: Command): void {
   if (w.tick % Math.round(CARCASS.every * TICK_HZ) === 0 && w.carcasses.length < CARCASS.max) placeCarcass(w);
   // Newcomers wander in from the edge to keep the valley stocked.
   if (w.tick % Math.round(HERDS.every * TICK_HZ) === 0 && w.herbivores.length < HERDS.minTotal) {
-    const herd = w.herds[Math.floor(w.rand() * w.herds.length)];
-    const a = w.rand() * Math.PI * 2;
+    const herd = w.herds[Math.floor(w.rng.herd() * w.herds.length)];
+    const a = w.rng.herd() * Math.PI * 2;
     if (dry(Math.cos(a) * 60, Math.sin(a) * 60)) addHerbivore(w, herd, Math.cos(a) * 60, Math.sin(a) * 60);
   }
 }
