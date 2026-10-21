@@ -54,6 +54,8 @@ class HerbMesh {
 }
 
 export class HerbivoreMeshes {
+  // Called on each footfall pair: position, speed, and how softly it steps (1 = normal).
+  onStep: ((x: number, z: number, speed: number, quiet: number) => void) | null = null;
   readonly group = new THREE.Group();
   private readonly meshes = new Map<number, HerbMesh>();
   private readonly skin = new THREE.MeshStandardMaterial({ color: 0x8c8460, roughness: 0.9 });
@@ -90,7 +92,9 @@ export class HerbivoreMeshes {
       m.root.position.set(x, heightAt(x, z), z);
       m.root.rotation.y = yaw;
       // Sprawling diagonal gait: legs swing in diagonal pairs.
+      const half0 = Math.floor(m.phase * 2);
       m.phase = (m.phase + (h.speed / 0.9) * dt) % 1;
+      if (Math.floor(m.phase * 2) !== half0 && h.speed > 0.15) this.onStep?.(x, z, h.speed, 1);
       const swing = 0.6 * smooth(0.05, 0.5, h.speed);
       m.legs.forEach((l, i) => {
         const diag = i === 0 || i === 3 ? 0 : 0.5;

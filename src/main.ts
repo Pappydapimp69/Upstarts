@@ -9,6 +9,10 @@ import { CarcassMeshes } from './render/worldMeshes';
 import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { SauroMeshes } from './render/sauroMesh';
+import { FootfallRumble } from './render/rumble';
+import { HYPERODAPEDON } from './sim/herbivore';
+import { SAUROSUCHUS } from './sim/saurosuchus';
+import { state as inputState } from './input/input';
 import { initInput, readInput } from './input/input';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
@@ -29,7 +33,23 @@ view.scene.add(herrera.root);
 herrera.plant(p.x, p.z, p.yaw, p.body.size);
 const cam = new FollowCamera(view.camera, p.yaw, p.x, p.y, p.z);
 initInput(view.renderer.domElement);
+// Footsteps rumble the controller by weight, speed and direction (relative to the camera).
+const rumble = new FootfallRumble();
+const panOf = (x: number, z: number): number => {
+  const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz) || 1;
+  return (dx * Math.cos(cam.yaw) - dz * Math.sin(cam.yaw)) / d; // camera right is (cos yaw, -sin yaw)
+};
+herrera.onStep = (foot: { x: number; z: number }) => {
+  rumble.step({ mass: p.body.mass, speed: p.speed, dist: 0, pan: Math.sign(panOf(foot.x, foot.z)) * 0.6 });
+};
+const feel = (mass: number) => (x: number, z: number, speed: number, quiet: number): void => {
+  rumble.step({ mass, speed, dist: Math.hypot(x - p.x, z - p.z), pan: panOf(x, z), quiet });
+};
+herbMeshes.onStep = feel(HYPERODAPEDON.mass);
+sauroMeshes.onStep = feel(SAUROSUCHUS.mass);
 const ui = new Ui();
+ui.setRumble(rumble.enabled);
+ui.onRumbleButton(() => ui.setRumble(rumble.toggle()));
 // The game waits on the splash until the player hatches; the menu button pauses it.
 let started = false, paused = false;
 ui.showIntro(true);
@@ -65,6 +85,7 @@ function frame(now: number): void {
     }
     acc = 0;
   } else if (paused) {
+    if (inp.toggle) ui.setRumble(rumble.toggle());
     if (inp.confirm || inp.menu) {
       paused = false;
       ui.showPause(false);
@@ -116,9 +137,10 @@ function frame(now: number): void {
   view.render(dt);
   const near = nearby();
   ui.update(world, near, cam.yaw);
+  rumble.flush(now, live && p.alive && inputState.device === 'pad');
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.
-(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; } };
+(window as unknown as { upstarts: unknown }).upstarts = { get world() { return world; }, cam, sauroMeshes, herbMeshes, herrera, view };

@@ -42,6 +42,7 @@ export class HerreraAnimator {
     this.D = { phase: 0, cycleT: 1, run: 0, roll: 0, pitchF: 0, bodyY: 0, tailYaw: 0, tailYawV: 0, tailTurnYaw: 0, tailTurnSign: 0,
       hd: 0, hu: 0, tilt: 0, hyaw: 0, dip: 0, act: 'none', actT: 0, actU: 0, sprintT: 0, time: 0, lie: 0, side: 1 };
     this.placed = false;
+    this.onStep = null; // (footPosition, side) on each touchdown
   }
 
   // Put the feet down under the body (on spawn or a teleport).
@@ -89,7 +90,7 @@ export class HerreraAnimator {
       for (const L of legs) {
         const q = (((D.phase + L.off) % 1) + 1) % 1;
         if (q < duty) {
-          if (L.swing) { L.planted.copy(L.footPos); L.planted.y = heightAt(L.planted.x, L.planted.z) + 0.035 * sz; } // touchdown
+          if (L.swing) { L.planted.copy(L.footPos); L.planted.y = heightAt(L.planted.x, L.planted.z) + 0.035 * sz; this.onStep?.(L.planted, L.sx); } // touchdown
           L.swing = false;
           L.footPos.copy(L.planted); L.liftS = 0; L.stanceU = q / duty; L.groundY = L.planted.y - 0.035 * sz;
           continue;

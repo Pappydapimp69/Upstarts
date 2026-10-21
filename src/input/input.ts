@@ -18,10 +18,12 @@ export interface RawInput {
   eat: boolean; // held
   confirm: boolean; // pressed
   menu: boolean; // pressed
+  toggle: boolean; // pressed: the option on the pause card (rumble)
 }
 
 const keys = new Set<string>();
-let dragX = 0, dragY = 0, dragging = false, recenter = false, confirm = false, menu = false;
+let dragX = 0, dragY = 0, dragging = false, recenter = false, confirm = false, menu = false, toggle = false;
+let padToggleWas = false;
 let padConfirmWas = false, padMenuWas = false;
 export const state = { device: (matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys') as Device, padSeen: false };
 const listeners: ((d: Device) => void)[] = [];
@@ -52,6 +54,7 @@ export function initInput(canvas: HTMLElement): void {
     if (e.code === 'KeyC') recenter = true;
     if ((e.code === 'Enter' || e.code === 'Space') && !e.repeat) confirm = true;
     if (e.code === 'Escape' && !e.repeat) menu = true;
+    if (e.code === 'KeyR' && !e.repeat) toggle = true;
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   window.addEventListener('blur', () => keys.clear());
@@ -195,6 +198,9 @@ export function readInput(): RawInput {
     const a = !!pad.buttons[0]?.pressed; // A
     if (a && !padConfirmWas) confirm = true;
     padConfirmWas = a;
+    const xb = !!pad.buttons[2]?.pressed; // X (also eat; only read as a toggle while paused)
+    if (xb && !padToggleWas) toggle = true;
+    padToggleWas = xb;
     const st = !!pad.buttons[9]?.pressed; // Start
     if (st && !padMenuWas) menu = true;
     padMenuWas = st;
@@ -212,8 +218,8 @@ export function readInput(): RawInput {
     moveF /= m;
     moveR /= m;
   }
-  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, confirm, menu };
+  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, confirm, menu, toggle };
   dragX = dragY = 0;
-  recenter = confirm = menu = false;
+  recenter = confirm = menu = toggle = false;
   return out;
 }

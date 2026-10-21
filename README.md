@@ -20,6 +20,10 @@ Pushes deploy to GitHub Pages (`.github/workflows/pages.yml`).
 WASD move · Shift sprint · hold G drink (or sniff away from water) · hold E eat (or bite live prey)
 · drag to look · C camera behind.
 Controller: left stick, RT sprint, hold B drink/sniff, hold X eat/bite, A to hatch again.
+Footsteps rumble the controller: heavier and faster animals hit harder, and a step to your left or
+right drives that side (left/right triggers on Xbox-style pads, else the left/right motors).
+Toggle it on the pause card (R, or X on a controller).
+
 Add `?fast` to the URL to run hunger, thirst and growth 20x faster, and `?adult` to start fully grown.
 
 ## Look

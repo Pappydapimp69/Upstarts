@@ -70,7 +70,7 @@ export class Ui {
     this.el('keysList').innerHTML = KEYS[d].map(([a, b]) => `<div style="display:contents"><dt>${a}</dt><dd>${b}</dd></div>`).join('');
     const go = BTN[d].go;
     this.el('deathCta').textContent = d === 'touch' ? 'Tap to hatch again' : `Press ${go} to hatch again`;
-    this.el('pauseHint').textContent = d === 'touch' ? 'Tap to resume' : d === 'pad' ? 'Start or A to resume' : 'Esc or Enter to resume';
+    this.el('pauseHint').textContent = d === 'touch' ? 'Tap to resume' : d === 'pad' ? 'X toggles rumble · Start or A to resume' : 'R toggles rumble · Esc or Enter to resume';
   }
 
   showIntro(on: boolean): void {
@@ -80,6 +80,17 @@ export class Ui {
 
   showPause(on: boolean): void {
     this.el('pause').hidden = !on;
+  }
+
+  setRumble(on: boolean): void {
+    this.el('rumbleBtn').textContent = `Controller rumble: ${on ? 'on' : 'off'}`;
+  }
+
+  onRumbleButton(f: () => void): void {
+    this.el('rumbleBtn').addEventListener('click', (e) => {
+      e.stopPropagation(); // not a resume
+      f();
+    });
   }
 
   update(w: World, near: { water: boolean; food: boolean; prey: boolean }, camYaw: number): void {

@@ -69,6 +69,8 @@ class SMesh {
 }
 
 export class SauroMeshes {
+  // Called on each footfall pair: position, speed, and how softly it steps (1 = normal).
+  onStep: ((x: number, z: number, speed: number, quiet: number) => void) | null = null;
   readonly group = new THREE.Group();
   private readonly meshes = new Map<number, SMesh>();
   private readonly skin = new THREE.MeshStandardMaterial({ color: 0x5b5e3e, roughness: 0.85 });
@@ -105,7 +107,10 @@ export class SauroMeshes {
       m.lowered = damp(m.lowered, s.state === 'stalk' ? 1 : 0, 3, dt);
       m.root.position.set(x, heightAt(x, z) - m.lowered * 0.3, z);
       m.root.rotation.y = yaw;
+      const half0 = Math.floor(m.phase * 2);
       m.phase = (m.phase + (s.speed / 2.2) * dt) % 1;
+      // Stalking, it places its feet softly.
+      if (Math.floor(m.phase * 2) !== half0 && s.speed > 0.15) this.onStep?.(x, z, s.speed, s.state === 'stalk' ? 0.3 : 1);
       const swing = 0.55 * smooth(0.05, 0.6, s.speed);
       m.legs.forEach((l, i) => {
         const diag = i === 0 || i === 3 ? 0 : 0.5;
