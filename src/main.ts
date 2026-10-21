@@ -24,6 +24,9 @@ import { SAUROSUCHUS } from './sim/saurosuchus';
 import { setPlaying, setRoarLabel, state as inputState } from './input/input';
 import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
+import { objectiveOf } from './sim/objective';
+import { Marker } from './render/marker';
+import { Blood } from './render/blood';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
@@ -46,6 +49,14 @@ const smallMeshes = new SmallMeshes();
 view.scene.add(smallMeshes.group);
 const sauroMeshes = new SauroMeshes();
 view.scene.add(sauroMeshes.group);
+const marker = new Marker();
+view.scene.add(marker.g);
+const blood = new Blood(heightAt);
+view.scene.add(blood.points);
+// Fight feel (the Dlist demo's): a hit-stop freezes your own animation for a few hundredths of a second when a
+// bite lands, the head shakes to tear, and a bite taken makes it flinch away from that side.
+const fx = { hold: 0, heldBiteT: 0, biteHit: false, hurtT: 9, hurtSide: 0, hurtK: 0, jolt: 0 };
+const woundText = (left: number): string => left <= 0 ? 'Killed it' : left > 0.6 ? 'Bit it, a light wound' : left > 0.3 ? 'Bit it, badly wounded' : 'Bit it, nearly finished';
 
 let p = world.player;
 // The Dlist demo's Herrerasaurus model, reshaped per species. One model, re-planted for each new
@@ -192,6 +203,29 @@ function frame(now: number): void {
     }
     for (const ev of world.events) {
       audio.play(ev, tract());
+      if (ev.kind === 'bite' && ev.who === 'player') {
+        fx.biteHit = false;
+        if (ev.miss) ui.flash('Missed');
+      }
+      if (ev.kind === 'hit') {
+        const yaw = ev.yaw ?? 0, share = ev.share ?? 0.3;
+        if (ev.who === 'player') {
+          fx.biteHit = true;
+          fx.hold = 0.06 + 0.06 * share;
+          fx.heldBiteT = p.biteT;
+          fx.jolt = Math.max(fx.jolt, 0.3 + 0.6 * share);
+          ui.flash(woundText(ev.left ?? 1));
+        }
+        if (ev.target === world.players[0].entity) {
+          const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw); // its right
+          fx.hurtT = 0;
+          fx.hurtSide = Math.sign(-Math.sin(yaw) * rx - Math.cos(yaw) * rz) || 1; // the side the bite came from
+          fx.hurtK = Math.min(1, 0.4 + share * 4);
+          if (ev.who === 'prey') ui.flash('It bit back');
+        }
+        const big = ev.who === 'player' ? 1 : 1.4;
+        blood.spray(ev.x, ev.y, ev.z, yaw, share, big * Math.max(0.3, Math.min(1.5, ev.who === 'player' ? p.body.size : 1)));
+      }
       // Haptic jolts: your bite landing, and being bitten (harder, longer).
       if (ev.kind === 'hit' && ev.who === 'player') rumble.hit(0.45, 0.7, 90, performance.now(), inputState.device === 'touch');
       if (ev.kind === 'hit' && ev.who !== 'player' && Math.hypot(ev.x - p.x, ev.z - p.z) < 1.5) rumble.hit(0.7, 1, 180, performance.now(), inputState.device === 'touch');
@@ -219,9 +253,14 @@ function frame(now: number): void {
     const c = world.carcasses.reduce((b, k) => (Math.hypot(k.x - p.x, k.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? k : b), world.carcasses[0]);
     if (c) dipY = heightAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
   }
+  fx.hurtT += dt;
+  const held = fx.hold > 0;
+  fx.hold -= dt;
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
-    biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
-    air: Math.max(0, y - heightAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, dt);
+    biteT: held ? fx.heldBiteT : p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
+    biteHit: fx.biteHit, hurtT: fx.hurtT, hurtSide: fx.hurtSide, hurtK: fx.hurtK,
+    air: Math.max(0, y - heightAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, held ? 0 : dt);
+  blood.update(dt);
   view.setTime(dayTime(world.tick * TICK_DT));
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);
@@ -235,7 +274,8 @@ function frame(now: number): void {
     const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), gy = heightAt(s.x, s.z) + 1.0;
     return { ax: s.x + fx * 3, ay: gy, az: s.z + fz * 3, bx: s.x - fx * 2.5, by: gy, bz: s.z - fz * 2.5, r: 1.3 };
   });
-  cam.update(inp, dt, { x, y, z, yaw, speed: p.speed }, p.body.hip / 1.15, p.alive && p.hitT < 0.25 ? 1 - p.hitT / 0.25 : 0, blockers);
+  fx.jolt = Math.max(0, fx.jolt - dt * 6);
+  cam.update(inp, dt, { x, y, z, yaw, speed: p.speed }, p.body.hip / 1.15, Math.max(fx.jolt * 0.4, p.alive && p.hitT < 0.25 ? 1 - p.hitT / 0.25 : 0), blockers);
   // Ferns thin out between the camera and the player, and round a small player.
   fernCut.uCutA.value.copy(cam.camera.position);
   fernCut.uCutB.value.set(x, y + 0.6 * p.body.hip, z);
@@ -245,7 +285,9 @@ function frame(now: number): void {
   view.followSun(x, y, z);
   view.render(dt);
   const near = nearby();
-  ui.update(world, near, cam.yaw);
+  const goal = live ? objectiveOf(world) : null;
+  marker.update(goal?.at ?? null, goal?.at ? heightAt(goal.at.x, goal.at.z) : 0, goal?.at ? Math.hypot(goal.at.x - p.x, goal.at.z - p.z) : 0, dt);
+  ui.update(world, near, cam.yaw, goal, dt);
   rumble.flush(now, dt, live && p.alive && inputState.device === 'pad');
   {
     const s0 = world.sauros[0];

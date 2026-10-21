@@ -5,6 +5,7 @@ import { CLOCK, dayTime } from '../sim/clock';
 import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
 import { SPECIES, SPECIES_ORDER, type SpeciesId } from '../sim/species';
+import type { Objective } from '../sim/objective';
 import { onDevice, pressConfirm, state as inputState, type Device } from '../input/input';
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
@@ -52,10 +53,10 @@ const KEYS: Record<Device, [string, string][]> = {
   touch: [['Move', 'Left thumb (push to the edge to sprint)'], ['Camera', 'Drag on the right'], ['Drink / sniff', 'B (hold)'],
     ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'LT (hold)'], ['Roar', 'Y'], ['Calls', 'Hold Y'], ['Camera behind', '\u21BA'], ['Menu', '\u2630']],
 };
-const BTN: Record<Device, { drink: string; eat: string; go: string }> = {
-  pad: { drink: 'B', eat: 'X', go: 'A' },
-  keys: { drink: 'G', eat: 'E', go: 'Enter' },
-  touch: { drink: 'B', eat: 'X', go: 'tap' },
+const BTN: Record<Device, { drink: string; eat: string; go: string; rest: string; tear: string }> = {
+  pad: { drink: 'B', eat: 'X', go: 'A', rest: 'LT', tear: 'A' },
+  keys: { drink: 'G', eat: 'E', go: 'Enter', rest: 'Z', tear: 'Enter' },
+  touch: { drink: 'B', eat: 'X', go: 'tap', rest: 'LT', tear: 'A' },
 };
 
 function word(v: number, words: [number, string][]): string {
@@ -69,6 +70,9 @@ export class Ui {
   private readonly el = (id: string): HTMLElement => document.getElementById(id)!;
   private readonly records = loadRecords();
   private seenDeath: unknown = null;
+  private flashText = '';
+  private flashT = 9;
+  private goalKey = '';
   selected: SpeciesId = 'herrerasaurus';
 
   constructor() {
@@ -142,7 +146,13 @@ export class Ui {
     });
   }
 
-  update(w: World, near: { water: boolean; food: boolean; prey: boolean; browse: boolean }, camYaw: number): void {
+  // A line about the last blow ("Missed", "Badly wounded"), shown in place of the prompt for a moment.
+  flash(text: string): void {
+    this.flashText = text;
+    this.flashT = 0;
+  }
+
+  update(w: World, near: { water: boolean; food: boolean; prey: boolean; browse: boolean }, camYaw: number, goal: Objective | null = null, dt = 0): void {
     const d: Dino = w.player;
     const dev = inputState.device, btn = BTN[dev];
     this.el('padChip').hidden = inputState.padSeen || dev !== 'pad';
@@ -177,7 +187,24 @@ export class Ui {
       : near.prey ? `Hold <b>${btn.eat}</b> to bite` : near.water ? `Hold <b>${btn.drink}</b> to drink`
       : near.food ? `Hold <b>${btn.eat}</b> to eat` : near.browse ? `Hold <b>${btn.eat}</b> to browse the ferns` : '';
     const tear = `Press <b>${btn.go === 'tap' ? 'A' : btn.go}</b> again and again to tear free of the egg · ${EGG.presses - d.egg} of ${EGG.presses}`;
-    this.el('prompt').innerHTML = !d.alive ? '' : d.egg > 0 ? tear : hint;
+    this.flashT += dt;
+    this.el('prompt').innerHTML = !d.alive ? '' : d.egg > 0 ? tear : this.flashT < 1.6 ? this.flashText : hint;
+
+    // The objective, under the title plate. It glows for a moment when it changes.
+    const fill = (t: string): string => t.replace(/\{(eat|drink|go|rest)\}/g, (_, k: 'eat' | 'drink' | 'go' | 'rest') => `<b>${k === 'go' ? btn.tear : btn[k]}</b>`);
+    const goalEl = this.el('goal');
+    goalEl.hidden = !goal;
+    if (goal) {
+      this.el('goalSay').innerHTML = fill(goal.say);
+      this.el('goalSub').innerHTML = fill(goal.sub);
+      if (goal.key !== this.goalKey) {
+        this.goalKey = goal.key;
+        goalEl.classList.remove('new');
+        void goalEl.offsetWidth; // restart the animation
+        goalEl.classList.add('new');
+      }
+      goalEl.classList.toggle('danger', goal.key === 'danger' || goal.key === 'drinkNow' || goal.key === 'eatNow');
+    }
 
     // Sniffing: an arrow pointing the way the scent comes from, relative to the camera.
     const arrow = this.el('scent');
@@ -198,7 +225,7 @@ export class Ui {
       this.records.largest = Math.max(this.records.largest, L.growth);
       this.records.lives++;
       saveRecords(this.records);
-      this.el('deathTitle').textContent = L.cause === 'Saurosuchus' ? 'Killed by Saurosuchus' : `Died of ${L.cause}`;
+      this.el('deathTitle').textContent = L.cause === 'hunger' || L.cause === 'thirst' ? `Died of ${L.cause}` : `Killed by ${L.cause}`;
       this.el('deathStats').innerHTML = [
         ['Lived', `${fmt(L.age)}${best ? ' · new record' : ''}`],
         ['Reached', `${cap(stageOf(L.growth))} ${d.species.name} (${Math.round(L.growth * 100)}%)`],

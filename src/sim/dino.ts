@@ -55,6 +55,7 @@ export interface Dino {
   resting: boolean; // lying down (held)
   rest: number; // 0 standing .. 1 fully down, eased
   jumpLanded: number; // landing speed on the tick it touched down, else 0
+  snap: boolean; // a bite on its way: the jaws close BITE.snap s after the press, on whatever is there then
 }
 
 // A leap (Dlist demo): a short crouch, then a ballistic arc, heavier on the way down.
@@ -77,7 +78,7 @@ export function createDino(species: Species, x: number, z: number, yaw: number, 
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
     needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, egg: 0,
-    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0,
+    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false,
   };
 }
 
@@ -118,6 +119,8 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   // Wading slows it, up to about half speed at hip depth.
   const depth = waterDepthAt(d.x, d.z);
   target *= 1 - clamp(depth / 1.2, 0, 1) * 0.55;
+  // Badly hurt, it limps: down to 60% speed at the edge of death (the Dlist demo's limp, below 30%).
+  if (d.alive && d.needs.health < 0.3) target *= lerp(0.6, 1, d.needs.health / 0.3);
 
   // Hills: climbing costs work against gravity, so the slowdown scales with grade.
   // Gentle downhill helps a little; steep downhill has to be braked.

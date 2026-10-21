@@ -69,7 +69,9 @@ export class HerreraAnimator {
     this.placed = true;
   }
 
-  // s: { x, z, yaw, speed, accel, yawRate, act, alive, biteT, sprinting, size, dipY }
+  // s: { x, z, yaw, speed, accel, yawRate, act, alive, biteT, sprinting, size, dipY, biteHit, hurtT, hurtSide, hurtK }
+  // biteHit: the last bite landed (it shakes its head to tear); hurtT/hurtSide/hurtK: s since it was bitten, from
+  // which side (+1 its right) and how hard (0..1), for the flinch away from the bite (the Dlist demo's fight feel).
   update(s, dt) {
     const D = this.D, dino = this.dino, B = dino.B, sz = s.size;
     // Re-plant after a jump in position (spawn, teleport) or a growth step while standing.
@@ -163,6 +165,9 @@ export class HerreraAnimator {
       // The mid-jaw joint lets the front of the lower jaw flex: down as it gapes, up as it clamps.
       flex = o < 0.16 ? 0.13 * smooth(0, 0.16, o) : o < 0.3 ? lerp(0.13, -0.09, smooth(0.16, 0.26, o)) : -0.09 * (1 - smooth(0.3, 0.52, o));
     }
+    let biteYaw = 0;
+    if (s.biteHit && s.biteT > 0.24 && s.biteT < 0.62) biteYaw = 0.3 * Math.sin((s.biteT - 0.24) * 30) * (1 - smooth(0.3, 0.62, s.biteT)); // the tearing shake
+    const hurtE = s.hurtT !== undefined && s.hurtT < 0.8 ? (s.hurtK || 0) * Math.exp(-s.hurtT * 6) * smooth(0, 0.04, s.hurtT) : 0, hurtSide = s.hurtSide || 0;
     const pant = smooth(2, 5, D.sprintT);
     jawOpen = Math.max(jawOpen, pant * (0.12 + 0.06 * Math.sin(D.time * 9)));
 
@@ -230,13 +235,13 @@ export class HerreraAnimator {
     D.land = Math.max(0, (D.land || 0) - dt * 4);
     const down = 0.62 * this.pelvisY * smooth(0, 1, rest) + 0.2 * this.pelvisY * crouch + 0.12 * this.pelvisY * D.land;
     B.pelvis.position.set(fallShift, this.pelvisY - 0.085 * run + bob - hd * 0.16 - dip * 0.08 + D.bodyY / sz - fallDrop - down, 0);
-    B.pelvis.rotation.set(pelvisPitch, 0.045 * Math.sin(ph) * mf, D.roll + fallRoll + 0.035 * Math.sin(ph) * mf);
+    B.pelvis.rotation.set(pelvisPitch, 0.045 * Math.sin(ph) * mf, D.roll + fallRoll + 0.035 * Math.sin(ph) * mf - hurtSide * 0.12 * hurtE);
     B.spine1.rotation.set(0, -0.025 * Math.sin(ph) * mf, 0);
     B.spine2.rotation.set(0, -0.02 * Math.sin(ph) * mf, 0);
     B.chest.rotation.set(0.008 * Math.sin(D.time * 1.6), 0, 0);
     const look = (1 - mf) * 0.14 * Math.sin(D.time * 0.37) * Math.sin(D.time * 0.23 + 1) * (D.act === 'none' ? 1 : 0);
     // Head counterbalances body roll on uneven footing (toward the high side).
-    const nYaw = s.yawRate * 0.05 + D.hyaw + D.roll * 0.8;
+    const nYaw = s.yawRate * 0.05 + D.hyaw + D.roll * 0.8 + biteYaw - hurtSide * 0.45 * hurtE; // flinches away from the bite
     // Walk: relaxed S-curve neck, head high. Sprint: neck straight out and low, head in line with it.
     B.neck1.rotation.set(lerp(-0.14, 0.32, run) * (1 - hd) + hd * 0.62 + dip * 0.35 - D.hu * 0.22 - D.tilt * 0.04 + lunge * 0.1 - 0.35 * lie, nYaw * 0.25, 0.55 * D.side * lie);
     B.neck2.rotation.set(lerp(0.04, 0.17, run) * (1 - hd) + hd * 0.3 + dip * 0.2 - D.hu * 0.14 - D.tilt * 0.12 + lunge * 0.08, nYaw * 0.35 + look, 0.4 * D.side * lie);

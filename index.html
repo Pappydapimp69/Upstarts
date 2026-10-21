@@ -41,6 +41,17 @@
         backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
       .binomial { margin: 0; font-family: var(--f-display); font-style: italic; font-weight: 500; font-size: 1.35rem; letter-spacing: 0.005em; }
       .meta { margin: 0; color: var(--ink-2); font-size: 0.78rem; letter-spacing: 0.02em; }
+      /* The objective: what to do next, worked out from live state (the Dlist tutorial panel's style). */
+      .goal { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+      .gsay { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+      .gsay::before { content: "Next  "; font-size: 0.62rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ochre); white-space: pre; }
+      .goal.danger .gsay, .goal.danger .gsay::before { color: #e0705a; }
+      .gsub { margin: 0; font-size: 0.74rem; line-height: 1.35; color: var(--ink-2); text-wrap: pretty; }
+      .gsub b, .gsay b { color: var(--ochre); font-weight: 600; }
+      .goal.new { animation: goalIn 1.2s ease-out; }
+      @keyframes goalIn { 0% { background: rgba(212, 155, 83, 0.28); } 100% { background: transparent; } }
+      @media (prefers-reduced-motion: reduce) { .goal.new { animation: none; } }
+      body.touch .gsub { display: none; }
 
       .readout { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
         width: min(386px, calc(100% - 32px)); box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
@@ -165,6 +176,7 @@
     <header class="plate">
       <p class="binomial">Herrerasaurus ischigualastensis</p>
       <p class="meta" id="meta">Hatchling · Ischigualasto, about 231 million years ago</p>
+      <div class="goal" id="goal" hidden aria-live="polite"><p class="gsay" id="goalSay"></p><p class="gsub" id="goalSub"></p></div>
     </header>
 
     <div class="chips">

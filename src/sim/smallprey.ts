@@ -200,6 +200,7 @@ export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: n
   // Steer away from deep water and the map edge.
   const lx = s.x + Math.sin(yaw) * 2, lz = s.z + Math.cos(yaw) * 2;
   if (waterDepthAt(lx, lz) > 0.2 || Math.hypot(lx, lz) > MAP_RADIUS - 12) yaw += Math.PI / 2;
+  target *= 0.4 + 0.6 * clamp(s.health, 0, 1); // a wounded animal can't run as fast (half health: 70% speed)
   const turn = sp.turn * dt;
   s.yaw = wrapAngle(s.yaw + clamp(wrapAngle(yaw - s.yaw), -turn, turn));
   s.speed = damp(s.speed, target, 6, dt);

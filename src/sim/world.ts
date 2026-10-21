@@ -2,15 +2,15 @@
 // in a Web Worker or on a server unchanged (blueprint D2, D7).
 import { createDino, IDLE, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
 import { NEEDS, needPace, stepNeeds } from './needs';
-import { browseAt } from './flora';
-import { heightAt, SPAWNS, waterDepthAt } from './terrain';
+import { browseAt, pushOutOfTrees } from './flora';
+import { heightAt, SPAWNS, TOO_DEEP, waterDepthAt } from './terrain';
 import { SPECIES, type SpeciesId } from './species';
-import { lerp, wrapAngle } from './math';
+import { clamp, lerp, smooth, wrapAngle } from './math';
 import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
 import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
-import { biteDamage } from './combat';
+import { biteCap, biteDamage } from './combat';
 import { bodyOf, GROWTH } from './growth';
 import type { SoundEvent } from './events';
 import { SPRINT_DB, STEP_DB } from './hearing';
@@ -24,7 +24,7 @@ export const TICK_DT = 1 / TICK_HZ;
 export { SPAWNS } from './terrain';
 
 export const CARCASS = {
-  start: 6, // placed at the start
+  start: 0, // placed at the start: none (a harder opening, the owner's call: food has to be found or caught)
   meatMin: 40, // kg
   meatMax: 90,
   rot: 3 / 60, // kg lost per s (about 3 kg a minute)
@@ -55,7 +55,25 @@ export const BITE = {
   cooldown: 0.8, // s
   stamina: 0.06,
   bleed: 20, // s a bitten animal bleeds (and smells of blood)
+  // From the Dlist demo's fights: the jaws close a moment after the press, on whatever is there then, so a
+  // bite can miss; how well it lands sets the damage, and it shoves the victim along the strike.
+  snap: 0.2, // s from the press to the jaws closing (the animator's clamp)
+  lead: 1, // m (adult; half that plus half again for a hatchling): a bite can start on something this far short of reach
+  knock: 2, // m/s shove on the victim, plus knockShare per share of health taken (less on a heavier victim)
+  knockShare: 4,
 };
+
+// A wounded animal may turn and bite back (Dlist demo): below 60% health, 45% of the time, 0.3 s after it's bitten.
+// Hyperodapedon has a shearing beak and Exaeretodon cynodont teeth; small cynodonts just bolt.
+export const COUNTER = { below: 0.6, chance: 0.45, delay: 0.3, reach: 0.9, mult: 0.6 };
+
+// The opening (the owner's call, "make it more of a game"): a new hatchling comes out of the egg already
+// thirsty and hungry, with no carcasses about, and one small cynodont foraging just past the nest.
+export const START = { needs: 0.6, preyGap: 6 };
+
+// A shove in progress (bites knock their victims back), and a bite-back on its way.
+export interface Knock { id: number; vx: number; vz: number }
+export interface Counter { from: number; to: number; t: number }
 
 export const SAUROS = {
   homes: [{ x: -38, z: -34 }], // one apex predator for this valley (dlist/E9: predators are rare)
@@ -79,7 +97,7 @@ export interface PlayerSlot {
 export interface Death {
   age: number; // s it lived
   growth: number;
-  cause: 'hunger' | 'thirst' | 'Saurosuchus';
+  cause: 'hunger' | 'thirst' | 'Saurosuchus' | 'Hyperodapedon' | 'Exaeretodon';
   carcassId: number; // its own body, lying where it fell
 }
 
@@ -109,6 +127,8 @@ export interface World {
   speciesId: SpeciesId; // what the local player hatches as next (accessor)
   events: SoundEvent[]; // sounds made this tick; the client drains them
   eggs: boolean; // new hatchlings start inside an egg (the game; tests start hatched)
+  knocks: Knock[];
+  counters: Counter[];
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
@@ -117,6 +137,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale, growScale: 1,
     herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs,
+    knocks: [], counters: [],
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -136,6 +157,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
     for (let k = 0; k < HERDS.size; k++) addHerbivore(w, herd, Math.cos(a) * 32 + (w.rng.herd() - 0.5) * 10, Math.sin(a) * 32 + (w.rng.herd() - 0.5) * 10);
   }
   addSmallPrey(w);
+  for (const slot of w.players) startPrey(w, slot.dino);
   return w;
 }
 
@@ -221,13 +243,14 @@ function grubInReach(w: World, d: Dino, now: number): Grub | null {
   return best;
 }
 
-// Something alive in reach of the jaws, straight ahead.
+// Something alive in reach of the jaws, straight ahead. lead: extra range, for starting a bite on something
+// that will be in reach by the time the jaws close (leading a running target).
 type Target = { kind: 'herb'; h: Herbivore } | { kind: 'sauro'; s: Sauro } | { kind: 'small'; m: Small };
-function preyInReach(w: World, d: Dino): Target | null {
+function preyInReach(w: World, d: Dino, lead = 0): Target | null {
   let best: Target | null = null, bestD = Infinity;
   const consider = (x: number, z: number, radius: number, t: Target): void => {
     const dist = Math.hypot(x - d.x, z - d.z);
-    if (dist < d.body.snout + BITE.reach + radius && dist < bestD
+    if (dist < d.body.snout + BITE.reach + radius + lead && dist < bestD
       && Math.abs(wrapAngle(Math.atan2(x - d.x, z - d.z) - d.yaw)) < BITE.cone) {
       best = t;
       bestD = dist;
@@ -258,8 +281,37 @@ export const EGG = { presses: 4 };
 function spawnDino(w: World, id: SpeciesId): Dino {
   const s = SPAWNS[Math.floor(w.rng.spawn() * SPAWNS.length)];
   const d = createDino(SPECIES[id], s.x, s.z, s.yaw, w.startGrowth);
-  if (w.eggs && w.startGrowth === 0) d.egg = EGG.presses;
+  if (w.eggs && w.startGrowth === 0) {
+    d.egg = EGG.presses;
+    d.needs.hunger = d.needs.thirst = START.needs;
+  }
+  startPrey(w, d);
   return d;
+}
+
+// The game's opening: the nearest small cynodont is put out foraging a few metres past the nest, on the far side
+// from its burrow, so when it bolts for home it has to run past the hatchling (smallprey test: a cornered one is
+// catchable; one with a clear run home isn't).
+function startPrey(w: World, d: Dino): void {
+  if (!w.eggs || d.egg === 0) return;
+  let best: Small | null = null, bestD = Infinity;
+  for (const m of w.smalls) {
+    const dist = Math.hypot(m.homeX - d.x, m.homeZ - d.z);
+    if (m.kind === 'cynodont' && m.state === 'forage' && dist < bestD) {
+      best = m;
+      bestD = dist;
+    }
+  }
+  if (!best) return;
+  const away = Math.atan2(d.x - best.homeX, d.z - best.homeZ) + (w.rng.prey() - 0.5) * 0.8;
+  for (let r = START.preyGap; r > 2; r -= 1) {
+    const x = d.x + Math.sin(away) * r, z = d.z + Math.cos(away) * r;
+    if (waterDepthAt(x, z) > 0) continue;
+    best.x = x;
+    best.z = z;
+    best.yaw = away + Math.PI;
+    return;
+  }
 }
 
 // Somewhere on the dry valley floor.
@@ -337,6 +389,141 @@ function approach(d: Dino, yaw: number, dist: number, reach: number, act: Act): 
   return { act, ov: { yaw, target: 0, turnCap: 1.4, steer: true } };
 }
 
+// How squarely the jaws close on a body: 0 is a miss, 1 a clean bite. The snap point sits just past the snout;
+// the body is a segment along its heading, halfLen long each way, halfW wide. Centred bites do full damage and a
+// glancing one about 60%; biting on the run adds up to 25% (the Dlist demo's bite quality).
+function onTarget(d: Dino, x: number, z: number, yaw: number, halfLen: number, halfW: number): number {
+  const tx = d.x + Math.sin(d.yaw) * (d.body.snout + 0.3 * BITE.reach), tz = d.z + Math.cos(d.yaw) * (d.body.snout + 0.3 * BITE.reach);
+  const ax = Math.sin(yaw), az = Math.cos(yaw), rx = tx - x, rz = tz - z;
+  const along = clamp(rx * ax + rz * az, -halfLen, halfLen);
+  const e = Math.hypot(rx - ax * along, rz - az * along);
+  const reach = halfW + 0.25 + 0.35 * d.body.size;
+  if (e > reach) return 0;
+  return lerp(1, 0.6, smooth(0.3 * reach, reach, e)) * (1 + 0.25 * smooth(2, 7, d.speed));
+}
+
+// A bite shoves its victim along the strike: fully if the biter is twice its weight or more, not at all under half.
+function shove(w: World, id: number, yaw: number, share: number, attacker: number, victim: number): void {
+  const v = (BITE.knock + BITE.knockShare * share) * smooth(0.5, 2, attacker / victim);
+  if (v > 0.05) w.knocks.push({ id, vx: Math.sin(yaw) * v, vz: Math.cos(yaw) * v });
+}
+
+// The jaws close: on whatever is in front of them now, or on air.
+function snapJaws(w: World, slot: PlayerSlot): void {
+  const d = slot.dino, now = w.tick * TICK_DT;
+  const at = mouth(d.x, d.z, d.yaw, d.body.snout, 0.8 * d.body.hip);
+  const level = 88 + 10 * Math.log10(d.body.mass / 350);
+  const prey = preyInReach(w, d);
+  const q = !prey ? 0 : prey.kind === 'herb' ? onTarget(d, prey.h.x, prey.h.z, prey.h.yaw, HYPERODAPEDON.length * 0.4, 0.3)
+    : prey.kind === 'sauro' ? onTarget(d, prey.s.x, prey.s.z, prey.s.yaw, SAUROSUCHUS.length * 0.4, 0.45)
+    : onTarget(d, prey.m.x, prey.m.z, prey.m.yaw, SMALL[prey.m.kind].length * 0.45, SMALL[prey.m.kind].length * 0.15);
+  w.events.push({ kind: 'bite', who: 'player', ...at, level, yaw: d.yaw, miss: !q || undefined });
+  if (!prey || !q) return;
+  const mass = d.body.mass, mult = d.species.biteMult;
+  // A wounded animal that can fight back may turn on the biter.
+  const maybeCounter = (id: number, health: number): void => {
+    if (health > 0 && health < COUNTER.below && !w.counters.some((c) => c.from === id) && w.rng.ai() < COUNTER.chance) {
+      w.counters.push({ from: id, to: slot.entity, t: -COUNTER.delay });
+    }
+  };
+  if (prey.kind === 'herb') {
+    const h = prey.h;
+    const share = Math.min(biteDamage(mass, HYPERODAPEDON.mass, mult) * q, biteCap(mass, HYPERODAPEDON.mass));
+    h.health -= share;
+    w.events.push({ kind: 'hit', who: 'player', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 76 + 8 * share, share, left: Math.max(0, h.health), target: h.id, yaw: d.yaw });
+    w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
+    h.bleeding = BITE.bleed;
+    h.threatX = d.x;
+    h.threatZ = d.z;
+    h.alarmAt = now;
+    shove(w, h.id, d.yaw, share, mass, HYPERODAPEDON.mass);
+    if (h.health <= 0) h.state = 'dead';
+    else maybeCounter(h.id, h.health);
+  } else if (prey.kind === 'small') {
+    const m = prey.m;
+    const share = Math.min(biteDamage(mass, m.mass, mult) * q, biteCap(mass, m.mass));
+    m.health -= share;
+    const y = groundY(m.x, m.z) + SMALL[m.kind].hip;
+    w.events.push({ kind: 'hit', who: 'player', x: m.x, y, z: m.z, level: 66 + 10 * Math.log10(m.mass) + 8 * share, share, left: Math.max(0, m.health), target: m.id, yaw: d.yaw });
+    w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: m.x, y, z: m.z, level: 60 + 10 * Math.log10(m.mass) });
+    m.bleeding = BITE.bleed;
+    m.threatX = d.x;
+    m.threatZ = d.z;
+    m.alarmAt = now;
+    if (m.health <= 0) {
+      // Small enough to swallow whole; anything bigger leaves a carcass.
+      if (m.mass < SWALLOW_BELOW) feed(d, m.mass * 0.6);
+      else placeCarcassAt(w, m.x, m.z, m.yaw, m.mass * 0.5);
+      m.state = 'gone';
+      m.stateT = 0;
+    } else {
+      shove(w, m.id, d.yaw, share, mass, m.mass);
+      if (m.kind === 'exaeretodon') maybeCounter(m.id, m.health);
+    }
+  } else {
+    const s = prey.s;
+    const share = Math.min(biteDamage(mass, SAUROSUCHUS.mass, mult, SAUROSUCHUS.hide) * q, biteCap(mass, SAUROSUCHUS.mass));
+    s.health -= share;
+    w.events.push({ kind: 'hit', who: 'player', x: s.x, y: groundY(s.x, s.z) + 0.8, z: s.z, level: 76 + 8 * share, share, left: Math.max(0, s.health), target: s.id, yaw: d.yaw });
+    w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 1.1), level: 100 });
+    shove(w, s.id, d.yaw, share, mass, SAUROSUCHUS.mass);
+    if (s.health <= 0) s.state = 'dead';
+    // Bitten, it turns on whatever bit it, hungry or not.
+    else if (s.state !== 'retreat' && s.state !== 'charge') {
+      s.target = slot.entity;
+      s.state = 'charge';
+      s.stateT = 0;
+    }
+  }
+}
+
+// Bites-back come due: the wounded animal snaps at whoever bit it, if they're still in reach.
+function stepCounters(w: World, dt: number): void {
+  for (const c of w.counters) {
+    c.t += dt;
+    if (c.t < 0) continue;
+    const slot = w.players.find((k) => k.entity === c.to);
+    const h = w.herbivores.find((k) => k.id === c.from && k.state !== 'dead' && k.health > 0);
+    const m = h ? undefined : w.smalls.find((k) => k.id === c.from && exposed(k) && k.health > 0);
+    if (!slot || (!h && !m)) continue;
+    const a = (h ?? m)!, aMass = h ? HYPERODAPEDON.mass : m!.mass, half = h ? HYPERODAPEDON.length / 2 : SMALL[m!.kind].length / 2;
+    const p = slot.dino;
+    const yaw = Math.atan2(p.x - a.x, p.z - a.z);
+    a.yaw = yaw; // it turns to snap
+    const at = mouth(a.x, a.z, yaw, half, 0.3);
+    const inReach = p.alive && p.egg === 0 && Math.hypot(p.x - a.x, p.z - a.z) < half + 0.5 * p.body.snout + COUNTER.reach;
+    w.events.push({ kind: 'bite', who: 'prey', ...at, level: 76 + 10 * Math.log10(aMass / 80), yaw, miss: !inReach || undefined });
+    if (!inReach) continue;
+    const share = biteDamage(aMass, p.body.mass, COUNTER.mult);
+    p.needs.health = Math.max(0, p.needs.health - share);
+    p.hitT = 0;
+    p.speed *= 0.7; // staggered
+    w.events.push({ kind: 'hit', who: 'prey', x: p.x, y: groundY(p.x, p.z) + 0.6 * p.body.hip, z: p.z, level: 72 + 8 * share, share, left: p.needs.health, target: slot.entity, yaw });
+    w.events.push({ kind: 'call', who: 'player', call: 'yelp', ...mouth(p.x, p.z, p.yaw, p.body.snout, 0.9 * p.body.hip), level: 92 + 10 * Math.log10(p.body.mass / 350) });
+    shove(w, slot.entity, yaw, share, aMass, p.body.mass);
+    if (p.needs.health <= 0) killPlayer(w, slot, h ? 'Hyperodapedon' : 'Exaeretodon');
+  }
+  w.counters = w.counters.filter((c) => c.t < 0);
+}
+
+// Shoves play out over a few tenths of a second, easing off; nothing is shoved into deep water.
+function stepKnocks(w: World, dt: number): void {
+  const fade = Math.exp(-6 * dt);
+  for (const k of w.knocks) {
+    const slot = w.players.find((s) => s.entity === k.id);
+    const body: { x: number; z: number } | undefined = slot ? (slot.dino.alive ? slot.dino : undefined)
+      : w.herbivores.find((h) => h.id === k.id) ?? w.smalls.find((m) => m.id === k.id && exposed(m)) ?? w.sauros.find((s) => s.id === k.id);
+    if (body) {
+      const nx = body.x + k.vx * dt, nz = body.z + k.vz * dt;
+      if (waterDepthAt(nx, nz) < TOO_DEEP) [body.x, body.z] = pushOutOfTrees(nx, nz, 0.4);
+      if (slot) slot.dino.y = heightAt(body.x, body.z) + slot.dino.air;
+    }
+    k.vx *= fade;
+    k.vz *= fade;
+  }
+  w.knocks = w.knocks.filter((k) => Math.hypot(k.vx, k.vz) > 0.05);
+}
+
 // One player's creature for one tick: its actions, needs, footfalls, calls and growth.
 function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void {
   const d = slot.dino;
@@ -371,7 +558,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     // Lying down or mid-jump, it can't drink, eat or bite.
     const free = !d.resting && d.rest < 0.3 && !d.jump;
     const wantEat = free && !!cmd.eat, wantDrink = free && !!cmd.drink;
-    const prey = wantEat ? preyInReach(w, d) : null;
+    const prey = wantEat ? preyInReach(w, d, BITE.lead * (0.5 + d.body.size)) : null;
     if (wantDrink) {
       const water = findWater(d);
       if (water) ({ act, ov } = approach(d, water.yaw, water.dist, d.body.snout, 'drink'));
@@ -383,53 +570,10 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
       }
     } else if (prey) {
       act = 'bite';
-      if (d.biteT >= BITE.cooldown && d.stamina > BITE.stamina) {
+      if (d.biteT >= BITE.cooldown && d.stamina > BITE.stamina && !d.snap) {
         d.biteT = 0;
         d.stamina -= BITE.stamina;
-        w.events.push({ kind: 'bite', who: 'player', ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.8 * d.body.hip), level: 88 + 10 * Math.log10(d.body.mass / 350) });
-        if (prey.kind === 'herb') {
-          const h = prey.h;
-          const share = biteDamage(d.body.mass, HYPERODAPEDON.mass, d.species.biteMult);
-          h.health -= share;
-          w.events.push({ kind: 'hit', who: 'player', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 76 + 8 * share, share });
-          w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
-          h.bleeding = BITE.bleed;
-          h.threatX = d.x;
-          h.threatZ = d.z;
-          h.alarmAt = w.tick * TICK_DT;
-          if (h.health <= 0) h.state = 'dead';
-        } else if (prey.kind === 'small') {
-          const m = prey.m;
-          const share = biteDamage(d.body.mass, m.mass, d.species.biteMult);
-          m.health -= share;
-          const y = groundY(m.x, m.z) + SMALL[m.kind].hip;
-          w.events.push({ kind: 'hit', who: 'player', x: m.x, y, z: m.z, level: 66 + 10 * Math.log10(m.mass) + 8 * share, share });
-          w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: m.x, y, z: m.z, level: 60 + 10 * Math.log10(m.mass) });
-          m.bleeding = BITE.bleed;
-          m.threatX = d.x;
-          m.threatZ = d.z;
-          m.alarmAt = w.tick * TICK_DT;
-          if (m.health <= 0) {
-            // Small enough to swallow whole; anything bigger leaves a carcass.
-            if (m.mass < SWALLOW_BELOW) feed(d, m.mass * 0.6);
-            else placeCarcassAt(w, m.x, m.z, m.yaw, m.mass * 0.5);
-            m.state = 'gone';
-            m.stateT = 0;
-          }
-        } else {
-          const s = prey.s;
-          const share = biteDamage(d.body.mass, SAUROSUCHUS.mass, d.species.biteMult, SAUROSUCHUS.hide);
-          s.health -= share;
-          w.events.push({ kind: 'hit', who: 'player', x: s.x, y: groundY(s.x, s.z) + 0.8, z: s.z, level: 76 + 8 * share, share });
-          w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 1.1), level: 100 });
-          if (s.health <= 0) s.state = 'dead';
-          // Bitten, it turns on whatever bit it, hungry or not.
-          else if (s.state !== 'retreat' && s.state !== 'charge') {
-            s.target = slot.entity;
-            s.state = 'charge';
-            s.stateT = 0;
-          }
-        }
+        d.snap = true;
       }
     } else if (wantEat) {
       let bestD = d.body.reach + CARCASS.radius;
@@ -462,6 +606,10 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
         act = 'browse';
         ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
       }
+    }
+    if (d.snap && d.biteT >= BITE.snap) {
+      d.snap = false;
+      snapJaws(w, slot);
     }
     d.act = act;
     stepDino(d, cmd, dt, ov);
@@ -532,6 +680,8 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   w.events.length = 0;
   const cmds: Record<number, Command> = 'moveX' in cmd ? { 0: cmd as Command } : (cmd as Record<number, Command>);
   for (const slot of w.players) stepPlayer(w, slot, cmds[slot.id] ?? IDLE, dt);
+  stepCounters(w, dt);
+  stepKnocks(w, dt);
 
   // Saurosuchus: hunts the player and the herds, eats carcasses.
   const now = w.tick * TICK_DT;
@@ -549,22 +699,25 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     stepSauro(s, {
       now, rand: w.rng.ai, quarry, heard, night, carcasses: w.carcasses,
       bite: (id) => {
-        w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 0.9), level: 96 });
+        w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 0.9), level: 96, yaw: s.yaw });
         const slot = w.players.find((k) => k.entity === id);
         if (slot) {
           const p = slot.dino;
           const share = biteDamage(SAUROSUCHUS.mass, p.body.mass, SAUROSUCHUS.biteMult);
           p.needs.health = Math.max(0, p.needs.health - share);
-          w.events.push({ kind: 'hit', who: 'saurosuchus', x: p.x, y: groundY(p.x, p.z) + 0.8 * p.body.hip, z: p.z, level: 80 + 8 * share, share });
+          w.events.push({ kind: 'hit', who: 'saurosuchus', x: p.x, y: groundY(p.x, p.z) + 0.8 * p.body.hip, z: p.z, level: 80 + 8 * share, share, left: p.needs.health, target: slot.entity, yaw: s.yaw });
+          shove(w, slot.entity, s.yaw, share, SAUROSUCHUS.mass, p.body.mass);
           w.events.push({ kind: 'call', who: 'player', call: 'yelp', ...mouth(p.x, p.z, p.yaw, p.body.snout, 0.9 * p.body.hip), level: 92 + 10 * Math.log10(p.body.mass / 350) });
           p.hitT = 0;
+          p.speed *= 0.7; // staggered
           if (p.needs.health <= 0 && p.alive) killPlayer(w, slot, 'Saurosuchus');
         } else {
           const h = w.herbivores.find((k) => k.id === id);
           if (!h) return;
           const share = biteDamage(SAUROSUCHUS.mass, HYPERODAPEDON.mass, SAUROSUCHUS.biteMult);
           h.health -= share;
-          w.events.push({ kind: 'hit', who: 'saurosuchus', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 80 + 8 * share, share });
+          w.events.push({ kind: 'hit', who: 'saurosuchus', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 80 + 8 * share, share, left: Math.max(0, h.health), target: h.id, yaw: s.yaw });
+          shove(w, h.id, s.yaw, share, SAUROSUCHUS.mass, HYPERODAPEDON.mass);
           w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
           h.bleeding = BITE.bleed;
           h.threatX = s.x;

@@ -14,5 +14,9 @@ export interface SoundEvent {
   level: number; // dB at 1 m
   id?: number; // the entity that made it (PLAYER_ID for the player), for hearing
   share?: number; // hit: fraction of health the blow took
+  left?: number; // hit: the victim's health after it (0 = killed)
+  target?: number; // hit: the entity bitten (PLAYER_ID - slot for players)
+  yaw?: number; // bite and hit: the heading of the strike, for knockback and spray
+  miss?: boolean; // bite: snapped on air
   call?: 'squeak' | 'growl' | 'yelp' | CallStyle; // CallStyle: a player call, played from the CALLS table
 }
