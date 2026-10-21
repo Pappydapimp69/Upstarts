@@ -125,7 +125,7 @@ or insects as ambient life.
   ratio matters a lot. Grab or pin comes later.
 
 ### World cycles
-- Day/night cycle (D11): **60 minutes of daylight, then 40 minutes of night** (a 100-minute
+- Day/night cycle (D11): **60 minutes of daylight, then 20 minutes of night** (an 80-minute
   cycle). The sun spends 40 of the daylight minutes within ±15° of its highest point; dawn
   and dusk share the other 20. Night is dark and dangerous.
 - Wet/dry season cycle over several in-game days.
@@ -404,7 +404,7 @@ time on art (M5).**
 2. Growth time: about 2–3 hours to adult, or longer like *The Isle*?
 3. ~~Death~~ Decided: permanent (D10); only records carry over (D13).
 4. Map: start at 2 × 2 km, as proposed?
-5. ~~Day length~~ Decided: 60 min of daylight (40 near midday) plus 40 min of night (D11).
+5. ~~Day length~~ Decided: 60 min of daylight (40 near midday) plus 20 min of night (D11).
 6. Camera: third-person only, or a first-person option too?
 7. Nesting and family play (*The Isle*-style): in scope later, or never?
 8. ~~Real name for the game.~~ Decided: **Upstarts** (D9).
@@ -425,7 +425,7 @@ time on art (M5).**
 | D8 | Fully procedural sound engine. No recorded or designed audio. | LOCKED |
 | D9 | Game name: **Upstarts**. The full game lives in its own repo, `upstarts`. Dlist stays the shareable demo and tutorial. | LOCKED |
 | D10 | Death is permanent for that creature. You respawn as a new hatchling. | LOCKED |
-| D11 | Day/night: 60 min of daylight (the sun within ±15° of its highest point for 40 of them), then 40 min of night. | LOCKED |
+| D11 | Day/night: 60 min of daylight (the sun within ±15° of its highest point for 40 of them), then 20 min of night. | LOCKED |
 | D12 | Survival stats: hunger, thirst, stamina, health; injuries later; no temperature in v1. | LOCKED |
 | D13 | After a death only records carry over (longest life, kills). No unlocks or skins. | LOCKED |
 
