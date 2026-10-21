@@ -420,7 +420,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
           const share = biteDamage(d.body.mass, SAUROSUCHUS.mass, d.species.biteMult, SAUROSUCHUS.hide);
           s.health -= share;
           w.events.push({ kind: 'hit', who: 'player', x: s.x, y: groundY(s.x, s.z) + 0.8, z: s.z, level: 76 + 8 * share, share });
-          w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });
+          w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 1.1), level: 100 });
           if (s.health <= 0) s.state = 'dead';
           // Bitten, it turns on whatever bit it, hungry or not.
           else if (s.state !== 'retreat' && s.state !== 'charge') {
@@ -548,7 +548,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     stepSauro(s, {
       now, rand: w.rng.ai, quarry, heard, night, carcasses: w.carcasses,
       bite: (id) => {
-        w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 2.6, 0.9), level: 96 });
+        w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 0.9), level: 96 });
         const slot = w.players.find((k) => k.entity === id);
         if (slot) {
           const p = slot.dino;
@@ -583,7 +583,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     // Four footfalls per stride; stalking, it places its feet softly (-10 dB).
     footfalls(w, s, s.id, s.x, s.z, SAUROSUCHUS.mass, s.speed, 2.2, 4, dt, s.state === 'stalk' ? -10 : 0);
     // The charge starts with a growl: the ambush gives itself away at the last moment.
-    if (s.state === 'charge' && was !== 'charge') w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });
+    if (s.state === 'charge' && was !== 'charge') w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 1.1), level: 100 });
     // A kill becomes a carcass where it fell; it eats from that.
     if (s.target !== -1 && s.state !== 'eat') {
       const dead = w.herbivores.find((h) => h.id === s.target && h.state === 'dead');

@@ -15,7 +15,7 @@ class SMesh {
   lowered = 0;
 
   constructor(skin: THREE.Material, dark: THREE.Material, belly: THREE.Material) {
-    const S = SAUROSUCHUS;
+    const S = { hip: 0.9 }; // modelled at the 6.5 m first-pass size, then scaled to SAUROSUCHUS.length below
     const part = (geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh => {
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = true;
@@ -65,6 +65,7 @@ class SMesh {
       this.root.add(hip);
       this.legs.push(hip);
     }
+    this.root.scale.setScalar(SAUROSUCHUS.length / 6.5);
   }
 }
 

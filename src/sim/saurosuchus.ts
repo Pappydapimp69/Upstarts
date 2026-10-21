@@ -8,13 +8,15 @@ import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
 
 // Saurosuchus: the apex predator, a big crocodile-line archosaur. Rare, roams a
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
-// its mass and speeds are guesses, labelled as such.
+// its speeds are guesses, labelled as such. Size is scaled back (owner's call) to the measured
+// sub-adults, 4.07 m and 385 kg (Brain dlist/E98: mass = 5.71 L^3), so it only kills in one bite
+// when it massively outclasses its target (D17's cap), and an adult Herrerasaurus takes 3 bites.
 export const SAUROSUCHUS = {
   name: 'Saurosuchus',
-  length: 6.5, // m
-  hip: 0.9,
-  mass: 650, // kg (guess: estimates vary widely)
-  meat: 250,
+  length: 4.1, // m, a sub-adult like the measured specimens
+  hip: 0.57, // scaled with length from the 6.5 m / 0.9 m first pass
+  mass: 385, // kg: the measured 4.07 m sub-adults (5.71 x L^3)
+  meat: 150,
   patrol: 1.2, // m/s
   stalk: 0.7, // creeping, easing to stalkSlow in the last stretch
   stalkSlow: 0.3,
@@ -23,10 +25,10 @@ export const SAUROSUCHUS = {
   react: 0.5, // s for prey to react once it charges (tau in the catch radius)
   turnSlow: 1.6, // rad/s
   turnFast: 0.9, // at a charge: a long body turns wide
-  reach: 3.1, // m from its centre to what its jaws can close on
+  reach: 2.0, // m from its centre to what its jaws can close on (scaled with length)
   biteCone: 0.6,
   biteEvery: 1.4, // s
-  biteMult: 1.3, // heavy skull: bites harder than its mass alone gives
+  biteMult: 1.2, // heavy skull: bites harder than its mass alone gives
   hide: 1.5, // osteoderms down the back: bites do two thirds of the damage
   sight: 50,
   smell: 0.12,
@@ -39,7 +41,7 @@ export const SAUROSUCHUS = {
   heal: 1 / 400, // health/s while not fighting
   territory: 50, // m radius around its home
   minPrey: 25, // kg: smaller than this isn't worth chasing
-  maxPreyFrac: 0.8, // of its own mass: bigger than this is too risky
+  maxPreyFrac: 1.0, // of its own mass: bigger than this is too risky (an adult Herrerasaurus is still prey)
 };
 
 export type SauroState = 'patrol' | 'stalk' | 'charge' | 'eat' | 'retreat' | 'rest' | 'sleep' | 'dead';
@@ -233,7 +235,9 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
       yaw = steerTo(s, q.x, q.z);
       // Ease off as it closes so it doesn't overshoot (a long body turns wide at speed),
       // and swing the head round fast once it's in range.
-      target = Math.min(S.charge, q.speed + 1 + Math.max(0, d - S.reach) * 1.5);
+      // Inside jaw range it stops pressing in: walking on into the quarry puts its jaws past it, so it
+      // can't face it to bite and the charge times out with the quarry alive under it.
+      target = d < 0.7 * S.reach ? Math.min(q.speed, 1) : Math.min(S.charge, q.speed + 1 + Math.max(0, d - S.reach) * 1.5);
       turn = d < S.reach * 1.6 ? S.turnSlow * 1.5 : S.turnFast;
       if (d < S.reach && Math.abs(wrapAngle(yaw - s.yaw)) < S.biteCone && s.biteT >= S.biteEvery) {
         s.biteT = 0;

@@ -133,7 +133,7 @@ describe('Saurosuchus', () => {
     expect(catchRadius(7.4)).toBeLessThan(catchRadius(4.8));
   });
 
-  it('beats an adult Herrerasaurus that fights it head on', () => {
+  it('an adult Herrerasaurus that fights it head on pays for it, win or lose', () => {
     const w = arena(1, 6);
     secs(w, 40, (ww) => {
       const p = ww.player, t = ww.sauros[0];
@@ -143,9 +143,10 @@ describe('Saurosuchus', () => {
       return t ? { moveX: (t.x - p.x) * 0.01, moveZ: (t.z - p.z) * 0.01, sprint: 0, eat: true } : idle;
     });
     const s = w.sauros[0];
-    // Either the player died, or Saurosuchus had to break off: never the Herrerasaurus winning outright.
-    expect(!w.player.alive || (s && s.state === 'retreat')).toBe(true);
-    expect(w.sauros.length).toBe(1);
+    // Scaled back to a 385 kg sub-adult it is an even match for a 350 kg adult: the Herrerasaurus can
+    // win, but only badly hurt (the owner's call: no more one-bite kills on anything near its size).
+    expect(!w.player.alive || w.player.needs.health < 0.5).toBe(true);
+    void s;
   });
 
   it('ambushes a herd from downwind and eats the kill', () => {
@@ -180,7 +181,7 @@ describe('Saurosuchus', () => {
     w.player.yaw = 0;
     secs(w, 2, { ...idle, eat: true });
     expect(w.sauros.length).toBe(0);
-    expect(w.carcasses.some((c) => c.meat > 200)).toBe(true);
+    expect(w.carcasses.some((c) => c.meat > 0.8 * SAUROSUCHUS.meat)).toBe(true);
     secs(w, 601);
     expect(w.sauros.length).toBe(1);
   });

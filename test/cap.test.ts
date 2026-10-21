@@ -22,8 +22,8 @@ describe('ratio-gated bite cap', () => {
     expect(sauroBites(25)).toBe(1); // massively outclassed
   });
 
-  it('unchanged where it should be: Saurosuchus on Hyperodapedon 1, adult Herrerasaurus on Hyperodapedon 2', () => {
-    expect(sauroBites(HYPERODAPEDON.mass)).toBe(1);
+  it('Saurosuchus on Hyperodapedon 2 (scaled back to 385 kg it is under 5x its mass), adult Herrerasaurus on Hyperodapedon 2', () => {
+    expect(sauroBites(HYPERODAPEDON.mass)).toBe(2);
     expect(bitesToKill(HERRERASAURUS.mass, HYPERODAPEDON.mass)).toBe(2);
   });
 
