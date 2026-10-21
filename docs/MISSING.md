@@ -129,6 +129,46 @@ Ordered by what's cheap now and expensive later, then by what you feel when you 
 
 ---
 
+### ZaneGPT review with Brain (2026-10-21)
+
+**1. Controls: adopt the demo's map. Holds.** Brain adds two guards:
+- Putting drink and eat on one button needs a priority rule (eat over drink when a carcass is in reach, demo TD7), or one verb silently starves (Brain: single-action resolver lesson).
+- The egg reuses A for "tear free" while A is also jump. Block every world action during the egg explicitly. Don't rely on each action happening to be ignored (Brain: QTE remap lesson).
+
+**2. Damage: the demo's formula as is. Changed: don't adopt it unmodified.** Its share works out to
+`0.2 × attacker/defender mass`, which is linear. Measured on Upstarts' real matchups:
+
+| Matchup | Now (√) | Demo formula |
+|---|---|---|
+| Adult Herrerasaurus → Hyperodapedon | 3 bites | 2 bites |
+| Juvenile → Hyperodapedon | 8 | 8 |
+| Hatchling → Hyperodapedon | 29 | 108 |
+| Saurosuchus → juvenile | 2 | **1** |
+| Saurosuchus → sub-adult | 3 | **1** |
+| Saurosuchus → adult | 4 | 3 |
+| Adult → Saurosuchus | 9 | 10 |
+
+The demo's formula was tuned for a hatchling against small prey. Here it makes one *Saurosuchus* bite kill
+everything up to a sub-adult, so with permadeath and a 2.5 h growth, one bite erases up to two hours. The
+blueprint itself flags that tradeoff (§4). Brain: no damage curve, square root included, avoids one-shots
+past a 5–10× mass ratio; only capping a bite at a percentage of the defender's health keeps fight length
+steady. That has a known catch: in team fights the cap gets lopsided, so recheck it at multiplayer.
+*Recommendation:* take the demo's fight feel (hit-stop, knockback, fight-back) and its formula, but cap any
+single bite at about 60% of the defender's health, so even a *Saurosuchus* ambush leaves a chance to run.
+
+**3. Hatch on every new life. Holds.** Per Brain's progression lesson, the egg is sim state (you can't move
+or act, and you're vulnerable), and the client only draws it. Teach with an observer over real events,
+pinned to specific things (Brain: tutorial lessons), not a separate tutorial mode.
+
+**4. Growth time: Brain has no evidence either way.** It can't be settled on paper. Keep 2.5 h as
+provisional and decide after playtests. Life length and stage reached are already recorded.
+
+**5. Map size: hold.** Brain has no streaming evidence, only LOD hysteresis and KTX2-over-Draco lessons.
+Today's 180 m valley draws about 640k triangles, unmeasured on a real laptop. A 2 × 2 km map is about 120×
+the area. Measure frame rate on your own laptop first; chunking is needed either way.
+
+---
+
 ## 6. Risks and failure modes
 
 - **Porting drift:** the demo keeps changing (PORTING.md says so). Port from tagged commits and note the
