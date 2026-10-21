@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createWorld, PLAYER_ID, step, TICK_HZ, type World } from '../src/sim/world';
 import { createDino, type Command } from '../src/sim/dino';
 import { HERRERASAURUS } from '../src/sim/species';
-import { bodyOf, GROWTH, stageOf } from '../src/sim/growth';
+import { bodyOf, stageOf } from '../src/sim/growth';
 import { biteDamage, bitesToKill, maxHp } from '../src/sim/combat';
 import { HYPERODAPEDON } from '../src/sim/herbivore';
 import { catchRadius, createSauro, SAUROSUCHUS } from '../src/sim/saurosuchus';
@@ -52,8 +52,7 @@ describe('growth', () => {
   });
 
   it('takes about the set time to reach adult', () => {
-    const steps = GROWTH.toAdult;
-    expect(steps).toBe(2.5 * 3600);
+    expect(HERRERASAURUS.toAdult).toBe(2.5 * 3600);
     expect(stageOf(0.9)).toBe('adult');
     expect(bodyOf(HERRERASAURUS, 1).mass).toBeCloseTo(350);
   });
@@ -75,11 +74,22 @@ describe('combat', () => {
 });
 
 describe('Saurosuchus', () => {
-  it('ignores a hatchling', () => {
-    const w = arena(0, 20);
-    secs(w, 15);
-    expect(w.player.alive).toBe(true);
-    expect(w.player.needs.health).toBe(1);
+  it('a hatchling isn\'t worth a hunt from afar, but it snaps at one close by', () => {
+    for (const [gap, expectHunt] of [[20, false], [6, true]] as const) {
+      const w = arena(0, gap);
+      const s = w.sauros[0];
+      let hunted = false;
+      for (let i = 0; i < 5 * TICK_HZ; i++) {
+        // Hold it at the set distance so this is about choosing prey, not wandering into range.
+        if (s.state === 'patrol' || s.state === 'rest') {
+          s.x = w.player.x;
+          s.z = w.player.z + gap;
+        }
+        step(w, idle);
+        if (s.state === 'stalk' || s.state === 'charge') hunted = true;
+      }
+      expect(hunted).toBe(expectHunt);
+    }
   });
 
   it('stalks then charges a juvenile, inside its catch radius', () => {

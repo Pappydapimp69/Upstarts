@@ -21,12 +21,15 @@ export interface RawInput {
   menu: boolean; // pressed
   toggle: boolean; // pressed: the option on the pause card (rumble)
   call: CallStyle | 'auto' | null; // pressed: a call from the wheel or a number key, or 'auto' (Y / R tap)
+  nav: -1 | 0 | 1; // pressed: left/right on a menu (species picker)
 }
 
 const keys = new Set<string>();
 let dragX = 0, dragY = 0, dragging = false, recenter = false, confirm = false, menu = false, toggle = false;
 let padToggleWas = false;
 let call: CallStyle | 'auto' | null = null;
+let nav: -1 | 0 | 1 = 0;
+let navHold = 0;
 const padWas: boolean[] = [];
 let playing = false;
 export const setPlaying = (p: boolean): void => {
@@ -113,6 +116,8 @@ export function initInput(canvas: HTMLElement): void {
       if (wheel.open) closeWheel(false);
     }
     if (e.code === 'KeyV' && !e.repeat) toggle = true;
+    if (!playing && (e.code === 'ArrowLeft' || e.code === 'KeyA')) nav = -1;
+    if (!playing && (e.code === 'ArrowRight' || e.code === 'KeyD')) nav = 1;
     if (e.code === 'KeyR' && !e.repeat) wheel.rDown = performance.now(); // tap: roar on release; held: the wheel
     const digit = /^Digit([1-6])$/.exec(e.code);
     if (digit && playing) {
@@ -312,6 +317,18 @@ export function readInput(): RawInput {
       lookY = ry;
     }
     if (edge(3) && playing && !wheel.open) call = 'auto'; // Y: the roar that fits your condition
+    if (!playing) {
+      // Menus: D-pad left/right, or hold the stick over (repeats every 0.3 s).
+      if (edge(14)) nav = -1;
+      if (edge(15)) nav = 1;
+      const ax = pad.axes[0] ?? 0, t = performance.now();
+      if (Math.abs(ax) > 0.6) {
+        if (t > navHold) {
+          nav = ax > 0 ? 1 : -1;
+          navHold = t + 300;
+        }
+      } else navHold = 0;
+    }
     sprint = Math.max(sprint, pad.buttons[7]?.value ?? 0); // right trigger
     if (edge(10)) recenter = true; // left stick click: camera behind
     drink ||= bHeld; // B (hold)
@@ -341,9 +358,10 @@ export function readInput(): RawInput {
   }
   // Held R past a quarter second opens the wheel.
   if (wheel.rDown >= 0 && !wheel.open && playing && performance.now() - wheel.rDown > 250) openWheel('keys');
-  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, confirm, menu, toggle, call };
+  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, confirm, menu, toggle, call, nav };
   dragX = dragY = 0;
   recenter = confirm = menu = toggle = false;
   call = null;
+  nav = 0;
   return out;
 }

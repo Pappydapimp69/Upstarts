@@ -26,6 +26,14 @@ Toggle it on the pause card (R, or X on a controller).
 
 Add `?fast` to the URL to run hunger, thirst and growth 20x faster, and `?adult` to start fully grown.
 
+## Species
+
+Four playable dinosaurs, chosen on the splash and on the death card: *Herrerasaurus*, *Sanjuansaurus*,
+*Eodromaeus* and *Panphagia* (`src/sim/species.ts`). Each is the Dlist Herrerasaurus model reshaped by
+`src/render/dlist/shapes.js` (neck, head, tail, legs, arms, palette) and baked as a new rest pose, so the
+same animation drives all four. Small species grow up faster and get hungry sooner (mass^0.324);
+*Panphagia* also browses ferns.
+
 ## Look
 
 The environment, Herrerasaurus model and animation, and the HUD come from the Dlist demo

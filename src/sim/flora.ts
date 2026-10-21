@@ -1,6 +1,7 @@
-import { lerp } from './math';
+import { lerp, smooth } from './math';
+import { fbm } from './noise';
 import { rng } from './rng';
-import { heightAt, PONDS, SPAWNS } from './terrain';
+import { heightAt, PONDS, SPAWNS, waterDepthAt } from './terrain';
 
 // Trees are solid, so where they stand is part of the sim: a fixed seed, the same
 // for every player. Layout and counts follow the Dlist demo's valley.
@@ -50,6 +51,12 @@ function build(): Tree[] {
 }
 
 export const TREES: Tree[] = build();
+
+// Fern cover for browsing: the same clump field the renderer scatters ferns by. 0 bare .. 1 thick.
+export function browseAt(x: number, z: number): number {
+  if (waterDepthAt(x, z) > 0) return 0;
+  return smooth(0.35, 0.6, fbm(x * 0.09, z * 0.09, 71));
+}
 
 // Push a circle of radius rad out of any trunk it overlaps. Returns the corrected position.
 export function pushOutOfTrees(x: number, z: number, rad: number): [number, number] {

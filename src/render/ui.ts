@@ -3,6 +3,7 @@ import type { Dino } from '../sim/dino';
 import type { World } from '../sim/world';
 import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
+import { SPECIES, SPECIES_ORDER, type SpeciesId } from '../sim/species';
 import { onDevice, pressConfirm, state as inputState, type Device } from '../input/input';
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
@@ -28,7 +29,13 @@ const fmt = (s: number): string => {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
 };
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
-const ADULT_LENGTH = 5.2; // m nose to tail
+const BINOMIAL: Record<SpeciesId, string> = {
+  herrerasaurus: 'Herrerasaurus ischigualastensis',
+  eodromaeus: 'Eodromaeus murphi',
+  panphagia: 'Panphagia protos',
+  sanjuansaurus: 'Sanjuansaurus gordilloi',
+};
+const PICK_KEY = 'upstarts.species';
 
 const KEYS: Record<Device, [string, string][]> = {
   pad: [['Move', 'Left stick'], ['Camera', 'Right stick'], ['Sprint', 'Right trigger (hold)'], ['Drink / sniff', 'B (hold)'],
@@ -55,6 +62,7 @@ export class Ui {
   private readonly el = (id: string): HTMLElement => document.getElementById(id)!;
   private readonly records = loadRecords();
   private seenDeath: unknown = null;
+  selected: SpeciesId = 'herrerasaurus';
 
   constructor() {
     document.querySelectorAll<HTMLElement>('.readout [data-k]').forEach((e) => this.bars.set(e.dataset.k!, e));
@@ -63,6 +71,38 @@ export class Ui {
     this.setDevice(inputState.device);
     // A tap or click anywhere on a card counts as confirm (hatch, resume).
     for (const id of ['intro', 'death', 'pause']) this.el(id).addEventListener('click', () => pressConfirm());
+    try {
+      const s = localStorage.getItem(PICK_KEY) as SpeciesId | null;
+      if (s && s in SPECIES) this.selected = s;
+    } catch {
+      /* default */
+    }
+    // Species cards: tapping one picks it (and the card's click then hatches).
+    for (const id of ['pickIntro', 'pickDeath']) {
+      this.el(id).innerHTML = SPECIES_ORDER.map((k) => {
+        const sp = SPECIES[k];
+        return `<button type="button" class="sp" data-sp="${k}" role="option"><span class="sname">${sp.name}</span>
+          <span class="ssize">${sp.length} m · ${sp.mass} kg · ${sp.diet === 'omnivore' ? 'plants and meat' : 'meat'}</span>
+          <span class="sdesc">${sp.blurb}</span></button>`;
+      }).join('');
+      this.el(id).querySelectorAll<HTMLElement>('.sp').forEach((b) => b.addEventListener('click', () => this.pick(b.dataset.sp as SpeciesId)));
+    }
+    this.pick(this.selected);
+  }
+
+  pick(id: SpeciesId): void {
+    this.selected = id;
+    document.querySelectorAll<HTMLElement>('.sp').forEach((b) => b.classList.toggle('on', b.dataset.sp === id));
+    try {
+      localStorage.setItem(PICK_KEY, id);
+    } catch {
+      /* not remembered */
+    }
+  }
+
+  move(d: number): void {
+    const i = SPECIES_ORDER.indexOf(this.selected);
+    this.pick(SPECIES_ORDER[(i + d + SPECIES_ORDER.length) % SPECIES_ORDER.length]);
   }
 
   setDevice(d: Device): void {
@@ -70,7 +110,8 @@ export class Ui {
     this.el('keysTitle').textContent = d === 'pad' ? 'Controller' : d === 'touch' ? 'Touch' : 'Keyboard and mouse';
     this.el('keysList').innerHTML = KEYS[d].map(([a, b]) => `<div style="display:contents"><dt>${a}</dt><dd>${b}</dd></div>`).join('');
     const go = BTN[d].go;
-    this.el('deathCta').textContent = d === 'touch' ? 'Tap to hatch again' : `Press ${go} to hatch again`;
+    this.el('deathCta').textContent = d === 'touch' ? 'Tap a dinosaur to hatch again' : `Left and right to choose · ${go} to hatch again`;
+    this.el('introCta').textContent = d === 'touch' ? 'Tap a dinosaur to hatch' : `Left and right to choose · ${go} to hatch`;
     this.el('pauseHint').textContent = d === 'touch' ? 'Tap to resume' : d === 'pad' ? 'X toggles rumble · Start or A to resume' : 'V toggles rumble · Esc or Enter to resume';
   }
 
@@ -94,13 +135,14 @@ export class Ui {
     });
   }
 
-  update(w: World, near: { water: boolean; food: boolean; prey: boolean }, camYaw: number): void {
+  update(w: World, near: { water: boolean; food: boolean; prey: boolean; browse: boolean }, camYaw: number): void {
     const d: Dino = w.player;
     const dev = inputState.device, btn = BTN[dev];
     this.el('padChip').hidden = inputState.padSeen || dev !== 'pad';
 
     const stage = stageOf(d.growth);
-    this.el('meta').textContent = `${cap(stage)} · about ${(ADULT_LENGTH * d.body.size).toFixed(1)} m nose to tail · Ischigualasto, about 231 million years ago`;
+    document.querySelector('.binomial')!.textContent = BINOMIAL[d.species.id];
+    this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · Ischigualasto, about 231 million years ago`;
 
     const n = d.needs;
     const v: Record<string, number> = { health: n.health, hunger: n.hunger, thirst: n.thirst, stamina: d.stamina, growth: d.growth };
@@ -109,7 +151,7 @@ export class Ui {
       el.parentElement!.classList.toggle('low', k !== 'growth' && v[k] < 0.25);
     }
     const txt: Record<string, string> = {
-      health: `${Math.ceil(n.health * maxHp(d.body.mass))}/${Math.round(maxHp(d.body.mass))} HP`,
+      health: `${Math.ceil(n.health * maxHp(d.body.mass) - 1e-6)}/${Math.ceil(maxHp(d.body.mass) - 1e-6)} HP`,
       hunger: word(n.hunger, [[0.8, 'Fed'], [0.5, 'Peckish'], [0.2, 'Hungry'], [0, 'Starving']]),
       thirst: word(n.thirst, [[0.8, 'Watered'], [0.5, 'Thirsty'], [0.2, 'Parched'], [0, 'Dehydrated']]),
       stamina: word(d.stamina, [[0.8, 'Fresh'], [0.5, 'Winded'], [0.2, 'Tired'], [0, 'Spent']]),
@@ -120,11 +162,11 @@ export class Ui {
     this.el('pace').textContent = !d.alive ? 'Dead'
       : sp < 0.15 ? 'Standing' : `${sp < 0.68 * d.body.sprintMax ? (sp < 1.6 * d.body.size ** 0.5 ? 'Walking' : 'Running') : 'Sprinting'} · ${sp.toFixed(1)} m/s`;
 
-    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'bite' ? 'Biting'
+    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'bite' ? 'Biting'
       : d.act === 'turn' || d.act === 'shuffle' ? 'Heading for the water'
       : d.act === 'sniff' ? (d.sniff ? (d.sniff.strength > 0.5 ? 'Strong scent on the wind' : 'Faint scent on the wind') : 'Nothing on the wind')
       : near.prey ? `Hold <b>${btn.eat}</b> to bite` : near.water ? `Hold <b>${btn.drink}</b> to drink`
-      : near.food ? `Hold <b>${btn.eat}</b> to eat` : '';
+      : near.food ? `Hold <b>${btn.eat}</b> to eat` : near.browse ? `Hold <b>${btn.eat}</b> to browse the ferns` : '';
     this.el('prompt').innerHTML = d.alive ? hint : '';
 
     // Sniffing: an arrow pointing the way the scent comes from, relative to the camera.
@@ -149,7 +191,7 @@ export class Ui {
       this.el('deathTitle').textContent = L.cause === 'Saurosuchus' ? 'Killed by Saurosuchus' : `Died of ${L.cause}`;
       this.el('deathStats').innerHTML = [
         ['Lived', `${fmt(L.age)}${best ? ' · new record' : ''}`],
-        ['Reached', `${cap(stageOf(L.growth))} (${Math.round(L.growth * 100)}%)`],
+        ['Reached', `${cap(stageOf(L.growth))} ${d.species.name} (${Math.round(L.growth * 100)}%)`],
         ['Longest life', fmt(this.records.longestLife)],
         ['Lives', String(this.records.lives)],
       ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');

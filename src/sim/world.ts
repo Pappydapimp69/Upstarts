@@ -1,9 +1,10 @@
 // Game state and rules. No Three.js or DOM here: the sim must be able to run
 // in a Web Worker or on a server unchanged (blueprint D2, D7).
 import { createDino, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
-import { NEEDS, stepNeeds } from './needs';
+import { NEEDS, needPace, stepNeeds } from './needs';
+import { browseAt } from './flora';
 import { heightAt, SPAWNS, waterDepthAt } from './terrain';
-import { HERRERASAURUS } from './species';
+import { SPECIES, type SpeciesId } from './species';
 import { wrapAngle } from './math';
 import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
@@ -82,14 +83,15 @@ export interface World {
   sauros: Sauro[];
   sauroGoneAt: number; // world time the last one died, -1 if alive
   startGrowth: number; // what new animals hatch at (0 = hatchling)
+  speciesId: SpeciesId; // what the player hatches as
   events: SoundEvent[]; // sounds made this tick; the client drains them
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
-export function createWorld(seed = 1, needScale = 1, startGrowth = 0): World {
+export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus'): World {
   const rand = rng(seed);
   const w: World = {
-    tick: 0, seed, rand, player: spawnDino(rand, startGrowth), carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
+    tick: 0, seed, rand, player: spawnDino(rand, startGrowth, speciesId), speciesId, carcasses: [], nextId: 1, lastDeath: null, lives: 1, needScale,
     herds: [], herbivores: [], sauros: [], sauroGoneAt: -1, startGrowth, events: [],
   };
   for (const h of SAUROS.homes) w.sauros.push(createSauro(w.nextId++, h.x, h.z));
@@ -169,9 +171,9 @@ function smell(w: World, d: Dino): { yaw: number; strength: number } | null {
   return best;
 }
 
-function spawnDino(rand: () => number, growth: number): Dino {
+function spawnDino(rand: () => number, growth: number, id: SpeciesId): Dino {
   const s = SPAWNS[Math.floor(rand() * SPAWNS.length)];
-  return createDino(HERRERASAURUS, s.x, s.z, s.yaw, growth);
+  return createDino(SPECIES[id], s.x, s.z, s.yaw, growth);
 }
 
 // Somewhere on the dry valley floor.
@@ -214,6 +216,12 @@ function mouth(x: number, z: number, yaw: number, reach: number, up: number): { 
   return { x: mx, y: groundY(mx, mz) + up, z: mz };
 }
 
+// Before the game starts: hatch the player as another species at a fresh spawn.
+export function hatchAs(w: World, id: SpeciesId): void {
+  w.speciesId = id;
+  w.player = spawnDino(w.rand, w.startGrowth, id);
+}
+
 function killPlayer(w: World, cause: Death['cause']): void {
   const d = w.player;
   d.alive = false;
@@ -240,7 +248,8 @@ export function step(w: World, cmd: Command): void {
   if (!d.alive) {
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
-      w.player = spawnDino(w.rand, w.startGrowth);
+      if (cmd.species) w.speciesId = cmd.species;
+      w.player = spawnDino(w.rand, w.startGrowth, w.speciesId);
       w.lives++;
     }
   } else {
@@ -268,7 +277,7 @@ export function step(w: World, cmd: Command): void {
         w.events.push({ kind: 'bite', who: 'player', ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.8 * d.body.hip), level: 88 + 10 * Math.log10(d.body.mass / 350) });
         if (prey.kind === 'herb') {
           const h = prey.h;
-          const share = biteDamage(d.body.mass, HYPERODAPEDON.mass);
+          const share = biteDamage(d.body.mass, HYPERODAPEDON.mass, d.species.biteMult);
           h.health -= share;
           w.events.push({ kind: 'hit', who: 'player', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 76 + 8 * share, share });
           w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
@@ -279,7 +288,7 @@ export function step(w: World, cmd: Command): void {
           if (h.health <= 0) h.state = 'dead';
         } else {
           const s = prey.s;
-          const share = biteDamage(d.body.mass, SAUROSUCHUS.mass, 1, SAUROSUCHUS.hide);
+          const share = biteDamage(d.body.mass, SAUROSUCHUS.mass, d.species.biteMult, SAUROSUCHUS.hide);
           s.health -= share;
           w.events.push({ kind: 'hit', who: 'player', x: s.x, y: groundY(s.x, s.z) + 0.8, z: s.z, level: 76 + 8 * share, share });
           w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 2.6, 1.1), level: 100 });
@@ -304,6 +313,10 @@ export function step(w: World, cmd: Command): void {
       if (food) {
         const yaw = Math.atan2(food.x - d.x, food.z - d.z);
         ({ act, ov } = approach(d, yaw, bestD, d.body.snout + CARCASS.radius, 'eat'));
+      } else if (d.species.diet === 'omnivore' && browseAt(d.x, d.z) > 0.5) {
+        // Nothing to eat but ferns: an omnivore browses where it stands.
+        act = 'browse';
+        ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
       }
     }
     d.act = act;
@@ -312,11 +325,16 @@ export function step(w: World, cmd: Command): void {
     const n = d.needs;
     if (act === 'drink') n.thirst = Math.min(1, n.thirst + NEEDS.drinkRate * dt);
     if (act === 'eat' && food && n.hunger < 1) {
-      const kg = Math.min(food.meat, NEEDS.eatRate * dt, (1 - n.hunger) * NEEDS.kgPerHunger);
+      // Stomach and bite size scale with the animal: an empty stomach holds 25 kg for an adult Herrerasaurus
+      // and fills in about 12 s; a hatchling's fills in about 4 s from a few hundred grams.
+      const m = d.body.mass / 350;
+      const stomach = NEEDS.kgPerHunger * m, rate = NEEDS.eatRate * Math.pow(m, 0.75);
+      const kg = Math.min(food.meat, rate * dt, (1 - n.hunger) * stomach);
       food.meat -= kg;
-      n.hunger = Math.min(1, n.hunger + kg / NEEDS.kgPerHunger);
+      n.hunger = Math.min(1, n.hunger + kg / stomach);
     }
-    stepNeeds(n, isSprinting(d, cmd), dt, w.needScale);
+    if (act === 'browse') n.hunger = Math.min(1, n.hunger + NEEDS.browseRate * dt);
+    stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, needPace(d.species.mass));
     d.age += dt;
     d.hitT += dt;
     d.callT += dt;
@@ -350,7 +368,7 @@ export function step(w: World, cmd: Command): void {
     }
     // Grows only while fed and watered.
     if (d.growth < 1 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove) {
-      d.growth = Math.min(1, d.growth + (dt * w.needScale) / GROWTH.toAdult);
+      d.growth = Math.min(1, d.growth + (dt * w.needScale) / d.species.toAdult);
       d.body = bodyOf(d.species, d.growth);
     }
   }

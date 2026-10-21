@@ -101,6 +101,16 @@
       .card button:hover { color: var(--ink); border-color: rgba(239, 230, 214, 0.35); }
       .card button:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
       .hint { margin: 0; color: var(--ink-3); font-size: 0.78rem; }
+      /* Species picker (on the splash and the death card), in the style of the demo's map picker. */
+      .card.wide { width: min(760px, 100%); }
+      .species { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .card .sp { justify-self: stretch; display: grid; gap: 4px; align-content: start; text-align: left; padding: 10px 12px; border-radius: 6px;
+        border: 1px solid var(--line); background: rgba(239, 230, 214, 0.04); color: var(--ink); cursor: pointer; }
+      .card .sp.on { border-color: rgba(212, 155, 83, 0.7); background: rgba(212, 155, 83, 0.14); }
+      .sp .sname { font-family: var(--f-display); font-style: italic; font-size: 1.15rem; }
+      .sp .ssize { font-family: var(--f-mono); font-size: 0.68rem; color: var(--ochre); }
+      .sp .sdesc { font-size: 0.74rem; line-height: 1.4; color: var(--ink-2); }
+      @media (max-width: 760px) { .species { grid-template-columns: 1fr 1fr; } .sp .sdesc { display: none; } }
 
       /* Call wheel: click the right stick (or hold R, or hold Y on touch), then point at a call. */
       .wheel { position: fixed; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; pointer-events: none;
@@ -194,13 +204,13 @@
     </aside>
 
     <div class="overlay" id="intro">
-      <div class="card">
+      <div class="card wide">
         <p class="eyebrow">Upstarts</p>
-        <h1>Herrerasaurus</h1>
+        <h1>Choose your dinosaur</h1>
         <p class="lede">Ischigualasto, about 231 million years ago. Crocodile relatives rule the valley. You hatch small: drink, scavenge, grow, and stay out of the way of <i>Saurosuchus</i> until you can hunt for yourself.</p>
+        <div class="species" id="pickIntro" role="listbox" aria-label="Species"></div>
         <p class="lede small">Hold B / G to drink at water, or sniff the wind away from it · hold X / E to eat a carcass, or bite live prey · right trigger / Shift sprints. Death is permanent; only your records carry over.</p>
-        <p class="cta" id="introCta">Press A on a controller, Enter, or tap to hatch</p>
-        <button type="button" id="kbStart">Hatch with keyboard and mouse</button>
+        <p class="cta" id="introCta">Left and right to choose · A or Enter to hatch · or tap one</p>
       </div>
     </div>
 
@@ -214,10 +224,11 @@
     </div>
 
     <div class="overlay" id="death" hidden>
-      <div class="card">
+      <div class="card wide">
         <p class="eyebrow">Death is permanent</p>
         <h1 id="deathTitle"></h1>
         <dl class="stats" id="deathStats"></dl>
+        <div class="species" id="pickDeath" role="listbox" aria-label="Hatch as"></div>
         <p class="cta" id="deathCta">Press A, Enter or tap to hatch again</p>
       </div>
     </div>

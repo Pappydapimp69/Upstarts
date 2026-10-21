@@ -21,6 +21,10 @@ const skinU = {
   // Antorbital fenestra and nostril on each side of the snout (bind pose: centre z, y, half length, half height).
   uFen: { value: new THREE.Vector4(2.05, 1.622, 0.046, 0.02) },
   uNar: { value: new THREE.Vector4(2.3, 1.567, 0.02, 0.0105) },
+  // Palette (set per species; colors are invented, the fossils don't record them).
+  uBack: { value: new THREE.Vector3(0.075, 0.06, 0.042) }, uFlank: { value: new THREE.Vector3(0.25, 0.155, 0.08) },
+  uBelly: { value: new THREE.Vector3(0.50, 0.42, 0.31) }, uStripe: { value: 1 },
+  uFurA: { value: new THREE.Vector3(0.27, 0.17, 0.09) }, uFurB: { value: new THREE.Vector3(0.10, 0.075, 0.05) },
 };
 
 class SkinBuilder {
@@ -134,6 +138,7 @@ const skinGLSL = /* glsl */`
   varying vec3 vBindPos; varying vec3 vBindN;
   uniform float uWet[${BANDS}]; uniform float uMudCover[${BANDS}]; uniform float uMudDry[${BANDS}]; uniform float uMudFlake[${BANDS}];
   uniform float uBandH; uniform vec4 uFen; uniform vec4 uNar; varying float vFz;
+  uniform vec3 uBack; uniform vec3 uFlank; uniform vec3 uBelly; uniform float uStripe; uniform vec3 uFurA; uniform vec3 uFurB;
   float ovalD(vec3 p, vec4 e){ float k = clamp((e.x + e.z - p.z) / (2.0 * e.z), 0.0, 1.0); vec2 q = vec2((p.z - e.x) / e.z, (p.y - e.y) / (e.w * (0.45 + 0.55 * k))); return dot(q, q); }
   ${['uWet', 'uMudCover', 'uMudDry', 'uMudFlake'].map((n) => `
   float b_${n}(float y){ float f = clamp(y / uBandH, 0.0, ${BANDS - 1}.0); int i = int(floor(f)); int j = min(i + 1, ${BANDS - 1}); return mix(${n}[i], ${n}[j], f - float(i)); }`).join('')}
@@ -168,16 +173,16 @@ const skinColorGLSL = /* glsl */`
   float vent = smoothstep(0.05, -0.65, BN.y);
   float limbLow = 1.0 - smoothstep(0.32, 0.68, P.y);
   float onBody = smoothstep(0.6, 0.85, P.y);
-  vec3 cBack = vec3(0.075, 0.06, 0.042);
-  vec3 cFlank = vec3(0.25, 0.155, 0.08);
-  vec3 cBelly = vec3(0.50, 0.42, 0.31);
+  vec3 cBack = uBack;
+  vec3 cFlank = uFlank;
+  vec3 cBelly = uBelly;
   vec3 skin = mix(cFlank, cBack, dors);
   skin = mix(skin, cBelly, vent * onBody);
   // Dark transverse bands across back and tail (invented pattern; colors are unknown from fossils).
   float bodyZone = onBody * (1.0 - smoothstep(1.2, 1.5, P.z));
   float bc = P.z * 2.5 + skFbm(P * 3.0) * 0.9;
   float stripe = smoothstep(0.34, 0.12, abs(fract(bc) - 0.5));
-  skin *= mix(1.0, 0.42, stripe * bodyZone * (1.0 - vent));
+  skin *= mix(1.0, max(0.0, 1.0 - 0.58 * uStripe), stripe * bodyZone * (1.0 - vent));
   float headZ = smoothstep(1.62, 1.95, P.z) * smoothstep(1.25, 1.45, P.y);
   skin = mix(skin, skin * vec3(1.3, 0.85, 0.7), headZ * (1.0 - vent * 0.6));
   skin = mix(skin, vec3(0.105, 0.09, 0.075), limbLow * 0.8);
@@ -230,10 +235,11 @@ const skinColorGLSL = /* glsl */`
 const skinMat = new THREE.MeshPhysicalMaterial({ roughness: 0.72, metalness: 0, envMapIntensity: 0.9, clearcoat: 1, clearcoatRoughness: 0.08, specularIntensity: 0.7 });
 skinMat.onBeforeCompile = (sh) => {
   Object.assign(sh.uniforms, skinU);
-  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vBindPos; varying vec3 vBindN; attribute float aFz; varying float vFz; uniform vec4 uGulp;')
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vBindPos; varying vec3 vBindN; attribute float aFz; varying float vFz; uniform vec4 uGulp; attribute vec3 aBind; attribute vec3 aBindN;')
     .replace('#include <begin_vertex>', `#include <begin_vertex>
-      vBindPos = position; vBindN = normal; vFz = aFz;
-      { vec3 dg = position - uGulp.xyz; transformed += normal * uGulp.w * exp(-dot(dg, dg) / 0.006) * smoothstep(0.1, -0.5, normal.y); }`);
+      // aBind/aBindN: the original Herrerasaurus surface, so the pattern stays put when a species reshapes the body.
+      vBindPos = aBind; vBindN = aBindN; vFz = aFz;
+      { vec3 dg = aBind - uGulp.xyz; transformed += normal * uGulp.w * exp(-dot(dg, dg) / 0.006) * smoothstep(0.1, -0.5, normal.y); }`);
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + skinGLSL)
     .replace('#include <color_fragment>', '#include <color_fragment>\n' + skinColorGLSL)
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = gRough;')
@@ -279,13 +285,13 @@ furMat.onBeforeCompile = (sh) => {
   Object.assign(sh.uniforms, skinU); sh.uniforms.uFurLen = { value: FUR.len };
   const band = (n) => `float v_${n}(float y){ float f = clamp(y / uBandH, 0.0, ${BANDS - 1}.0); int i = int(floor(f)); int j = min(i + 1, ${BANDS - 1}); return mix(${n}[i], ${n}[j], f - float(i)); }`;
   sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-    attribute float aFz; attribute float aH; varying vec3 vBindPos; varying vec3 vBindN; varying float vFz; varying float vH;
+    attribute float aFz; attribute float aH; attribute vec3 aBind; attribute vec3 aBindN; varying vec3 vBindPos; varying vec3 vBindN; varying float vFz; varying float vH;
     uniform float uWet[${BANDS}]; uniform float uMudCover[${BANDS}]; uniform float uMudFlake[${BANDS}]; uniform float uBandH; uniform float uFurLen;
     ${band('uWet')} ${band('uMudCover')} ${band('uMudFlake')}`)
     .replace('#include <begin_vertex>', `vec3 transformed = vec3(position);
-      vBindPos = position; vBindN = normal; vFz = aFz; vH = aH;
+      vBindPos = aBind; vBindN = aBindN; vFz = aFz; vH = aH;
       // Wet fuzz lies flatter and shorter; mud mats it down harder.
-      float fw = v_uWet(position.y), fm = smoothstep(0.3, 0.7, v_uMudCover(position.y)) * (1.0 - v_uMudFlake(position.y));
+      float fw = v_uWet(aBind.y), fm = smoothstep(0.3, 0.7, v_uMudCover(aBind.y)) * (1.0 - v_uMudFlake(aBind.y));
       float fl = uFurLen * smoothstep(0.0, 0.5, aFz) * mix(1.0, 0.55, fw) * mix(1.0, 0.35, fm);
       transformed += normal * fl * aH + vec3(0.0, -0.35, -1.0) * fl * aH * aH * mix(0.7, 1.4, max(fw, fm));`);
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + skinGLSL + '\nvarying float vH;')
@@ -306,8 +312,8 @@ furMat.onBeforeCompile = (sh) => {
       diffuseColor.a = strand;
       float bc = P.z * 2.5 + skFbm(P * 3.0) * 0.9;
       float stripe = smoothstep(0.34, 0.12, abs(fract(bc) - 0.5)) * (1.0 - smoothstep(1.2, 1.5, P.z));
-      vec3 fc = mix(vec3(0.27, 0.17, 0.09), vec3(0.10, 0.075, 0.05), smoothstep(-0.1, 0.8, vBindN.y));
-      fc *= mix(1.0, 0.5, stripe) * (0.7 + 0.6 * rn.x) * mix(0.4, 1.25, h / sl);
+      vec3 fc = mix(uFurA, uFurB, smoothstep(-0.1, 0.8, vBindN.y));
+      fc *= mix(1.0, max(0.0, 1.0 - 0.5 * uStripe), stripe) * (0.7 + 0.6 * rn.x) * mix(0.4, 1.25, h / sl);
       float wetV = smoothstep(0.0, 0.25, wet);
       fc = mix(fc, pow(fc, vec3(1.15)) * 0.42, wetV);
       float dryV = smoothstep(0.0, 0.25, mDry - skNoise(P * 3.3 + 11.0) * 0.75);
@@ -319,7 +325,60 @@ furMat.onBeforeCompile = (sh) => {
 };
 furMat.customProgramCacheKey = () => 'herrera-fur-v1';
 
-function buildHerrerasaurus() {
+// Reshape the built Herrerasaurus into another species' proportions (Upstarts addition). Bones are scaled
+// (neck, head, tail, legs, arms), the mesh is deformed through its own skin weights, and the result is
+// baked as the new rest pose with unit bone scales, so animation rotations never shear a scaled parent.
+// shape: { neck, neckGirth, head, tail, tailGirth, legs, arms } (1 = Herrerasaurus).
+function reshape({ rig, bones, B, skeleton, meshes, legs, shape }) {
+  const n = shape.neck ?? 1, ng = shape.neckGirth ?? 1, h = shape.head ?? 1, t = shape.tail ?? 1, tg = shape.tailGirth ?? 1;
+  const l = shape.legs ?? 1, a = shape.arms ?? 1;
+  const toeTip = legs.map((L) => L.toeTip.clone().sub(L.ball)); // feet keep their size
+  const plain = n === 1 && ng === 1 && h === 1 && t === 1 && tg === 1 && l === 1 && a === 1;
+  if (!plain) {
+    B.neck1.scale.set(ng, n, n);
+    B.head.scale.set(h / ng, h / n, h / n);
+    B.tail0.scale.set(tg, tg, t);
+    for (const S of ['L', 'R']) {
+      B['thigh' + S].scale.set(1, l, l);
+      B['toe' + S].scale.set(1, 1 / l, 1 / l);
+      B['upper' + S].scale.set(a, a, a);
+    }
+    B.pelvis.position.y += (l - 1) * 1.105; // longer legs lift the body, feet stay on the ground
+    rig.updateMatrixWorld(true);
+    skeleton.update();
+    const v = V();
+    for (const m of meshes) {
+      const pos = m.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        m.applyBoneTransform(i, v);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      pos.needsUpdate = true;
+      m.geometry.computeVertexNormals();
+    }
+    // Bake: bones at their new positions with unit scale, then bind again.
+    const abs = bones.map((b) => b.getWorldPosition(V()));
+    for (const b of bones) b.scale.set(1, 1, 1);
+    bones.forEach((b, i) => {
+      const pi = bones.indexOf(b.parent);
+      b.position.copy(abs[i]).sub(pi >= 0 ? abs[pi] : V());
+      b.userData.abs = abs[i].clone();
+    });
+    rig.updateMatrixWorld(true);
+    for (const m of meshes) m.bind(skeleton);
+  }
+  const at = (b) => b.userData.abs.clone();
+  const out = legs.map((L, i) => {
+    const S = L.S;
+    const hip = at(B['thigh' + S]), knee = at(B['shin' + S]), ankle = at(B['meta' + S]), ball = at(B['toe' + S]);
+    return { ...L, hip, knee, ankle, ball, toeTip: ball.clone().add(toeTip[i]) };
+  });
+  const L0 = out[0];
+  return { legs: out, pelvisY: at(B.pelvis).y, hip: L0.hip.y, leg: L0.knee.distanceTo(L0.hip) + L0.ankle.distanceTo(L0.knee) + L0.ball.distanceTo(L0.ankle) };
+}
+
+function buildHerrerasaurus(shape = {}) {
   const J = {
     pelvis: V(0, 1.18, 0), spine1: V(0, 1.2, 0.38), spine2: V(0, 1.19, 0.74), chest: V(0, 1.15, 1.05),
     neck1: V(0, 1.2, 1.3), neck2: V(0, 1.36, 1.5), neck3: V(0, 1.52, 1.66), head: V(0, 1.62, 1.8), snout: V(0, 1.53, 2.36),
@@ -476,13 +535,19 @@ function buildHerrerasaurus() {
   rig.updateMatrixWorld(true);
   const skeleton = new THREE.Skeleton(bones);
   for (const m of [bodyMesh, hornMesh, eyeMesh, furMesh]) m.bind(skeleton);
+  // The original surface, for the skin shader's patterns (see aBind in the shaders).
+  for (const g of [bodyGeo, furMesh.geometry]) {
+    g.setAttribute('aBind', g.attributes.position.clone());
+    g.setAttribute('aBindN', g.attributes.normal.clone());
+  }
+  const rest = reshape({ rig, bones, B, skeleton, meshes: [bodyMesh, hornMesh, eyeMesh, furMesh], legs, shape });
 
   // Vertex lists per height band, used to emit drips and mud flakes from the real skin surface.
   const bandVerts = Array.from({ length: BANDS }, () => []);
   const bp = bodyGeo.attributes.position;
   for (let i = 0; i < bp.count; i++) { const b = Math.round(bp.getY(i) / BAND_H); if (b >= 0 && b < BANDS) bandVerts[b].push(i); }
 
-  const legRig = legs.map((L, i) => ({
+  const legRig = rest.legs.map((L, i) => ({
     sx: L.sx, thigh: B['thigh' + L.S], shin: B['shin' + L.S], meta: B['meta' + L.S], toe: B['toe' + L.S],
     thighRest: L.knee.clone().sub(L.hip).normalize(), shinRest: L.ankle.clone().sub(L.knee).normalize(),
     metaRest: L.ball.clone().sub(L.ankle).normalize(), toeRest: L.toeTip.clone().sub(L.ball).normalize(),
@@ -490,7 +555,8 @@ function buildHerrerasaurus() {
     neutral: V(L.ball.x, 0, L.ball.z), off: i * 0.5,
     planted: V(), footPos: V(), liftPos: V(), swing: false, groundY: 0,
   }));
-  return { rig, B, bones, skeleton, bodyMesh, furMesh, legs: legRig, bandVerts, tails: J.tail.map((_, k) => B['tail' + k]) };
+  return { rig, B, bones, skeleton, bodyMesh, furMesh, legs: legRig, bandVerts, tails: J.tail.map((_, k) => B['tail' + k]),
+    pelvisY: rest.pelvisY, hip: rest.hip, leg: rest.leg };
 }
 
 export { buildHerrerasaurus, skinU, BANDS, BAND_H };

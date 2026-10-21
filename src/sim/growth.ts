@@ -3,9 +3,8 @@ import type { Species } from './species';
 
 // Growth (blueprint §4): hatchling -> juvenile -> sub-adult -> adult. Grows only
 // while fed and watered. Time to adult is a single tunable (open decision #2).
+// Time to adult and hatchling size are per species (small species grow up faster); see species.ts.
 export const GROWTH = {
-  toAdult: 2.5 * 60 * 60, // s of well-fed play from hatching to adult
-  hatchSize: 0.22, // hatchling length as a fraction of adult
   fedAbove: 0.5, // hunger and thirst both above this to grow
 };
 
@@ -31,7 +30,7 @@ export interface Body {
 }
 
 export function bodyOf(sp: Species, growth: number): Body {
-  const s = lerp(GROWTH.hatchSize, 1, growth);
+  const s = lerp(sp.hatchSize, 1, growth);
   const v = Math.sqrt(s);
   return {
     size: s,

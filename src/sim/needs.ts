@@ -14,7 +14,8 @@ export const NEEDS = {
   healAbove: 0.5, // both hunger and thirst above this to heal
   drinkRate: 0.15, // thirst/s while drinking (empty to full in about 7 s)
   eatRate: 2, // kg of meat/s while eating
-  kgPerHunger: 25, // kg of meat that fills an empty stomach
+  kgPerHunger: 25, // kg of meat that fills an adult Herrerasaurus's empty stomach (scales with body mass)
+  browseRate: 1 / 40, // hunger/s while an omnivore browses ferns (empty to full in 40 s)
 };
 
 export interface Needs {
@@ -25,12 +26,18 @@ export interface Needs {
 
 export const fullNeeds = (): Needs => ({ hunger: 1, thirst: 1, health: 1 });
 
-// scale speeds the clock up for testing (?fast in the URL).
-export function stepNeeds(n: Needs, sprinting: boolean, dt: number, scale = 1): void {
+// Small animals burn through food and water faster: hunger and thirst run at (350 / adult mass)^0.324,
+// so Eodromaeus eats about every 4 minutes and Herrerasaurus every 16 (Brain: compress hunger with one
+// factor for all species, keeping the real mass^0.324 spread).
+export const needPace = (adultMass: number): number => Math.pow(350 / adultMass, 0.324);
+
+// scale speeds the clock up for testing (?fast in the URL); pace is needPace for the species.
+export function stepNeeds(n: Needs, sprinting: boolean, dt: number, scale = 1, pace = 1): void {
   const t = dt * scale;
+  const tp = t * pace;
   const healing = n.health < 1 && n.hunger > NEEDS.healAbove && n.thirst > NEEDS.healAbove;
-  n.thirst = clamp(n.thirst - (t / NEEDS.thirstEmpty) * (sprinting ? NEEDS.sprintThirst : 1), 0, 1);
-  n.hunger = clamp(n.hunger - (t / NEEDS.hungerEmpty) * (sprinting ? NEEDS.sprintHunger : 1) * (healing ? NEEDS.healHunger : 1), 0, 1);
+  n.thirst = clamp(n.thirst - (tp / NEEDS.thirstEmpty) * (sprinting ? NEEDS.sprintThirst : 1), 0, 1);
+  n.hunger = clamp(n.hunger - (tp / NEEDS.hungerEmpty) * (sprinting ? NEEDS.sprintHunger : 1) * (healing ? NEEDS.healHunger : 1), 0, 1);
   if (n.hunger <= 0 || n.thirst <= 0) n.health = clamp(n.health - NEEDS.starveDamage * t * ((n.hunger <= 0 ? 1 : 0) + (n.thirst <= 0 ? 1 : 0)), 0, 1);
   else if (healing) n.health = clamp(n.health + NEEDS.healRate * t, 0, 1);
 }

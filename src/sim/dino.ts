@@ -4,7 +4,7 @@ import { fullNeeds, type Needs } from './needs';
 import { bodyOf, type Body } from './growth';
 import { pushOutOfTrees } from './flora';
 import type { CallStyle } from './calls';
-import type { Species } from './species';
+import type { Species, SpeciesId } from './species';
 
 // What a player (or AI, or remote client) asks for this tick. World-space, so the
 // sim never needs to know where a camera is.
@@ -15,12 +15,13 @@ export interface Command {
   drink?: boolean; // held: drinks in reach of water, sniffs the air otherwise
   eat?: boolean; // held: bites live prey in front, eats a carcass otherwise
   respawn?: boolean; // pressed, only read while dead
+  species?: SpeciesId; // what to hatch as on respawn
   call?: CallStyle | 'auto'; // pressed: a call from the wheel, or 'auto' for Y's condition roar
 }
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
-export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'bite' | 'sniff';
+export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff';
 
 export interface Dino {
   species: Species;

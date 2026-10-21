@@ -9,13 +9,13 @@ import { clamp, damp, lerp, smooth, wrapAngle } from '../../sim/math';
 import { heightAt, WATER_Y } from '../../sim/terrain';
 import { WIND_FROM_YAW } from '../../sim/scent';
 import { buildHerrerasaurus, skinU } from './herrerasaurus.js';
+import { LOOKS } from './shapes.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const UP = V(0, 1, 0);
 const AX = V(1, 0, 0);
 const TAIL_W = [0.33, 0.32, 0.15, 0.1, 0.034, 0.033, 0.033]; // bend concentrated at the base: the rear tail was stiffened
 const GULP_A = V(0, 1.42, 1.7), GULP_B = V(0, 1.06, 1.3);
-const HIP = 1.15, LEG = 1.18;
 
 const tmp = { v: V(), v2: V(), v3: V() };
 function aimBone(bone, parentQ, rest, target) {
@@ -34,8 +34,18 @@ function solveKnee(H, A, a, b, pole) {
 }
 
 export class HerreraAnimator {
-  constructor() {
-    this.dino = buildHerrerasaurus();
+  // speciesId: which body plan and palette to build (src/render/dlist/shapes.js).
+  constructor(speciesId = 'herrerasaurus') {
+    const look = LOOKS[speciesId] || LOOKS.herrerasaurus;
+    const P = look.palette, U = skinU;
+    U.uBack.value.copy(P.back); U.uFlank.value.copy(P.flank); U.uBelly.value.copy(P.belly);
+    U.uStripe.value = P.stripe; U.uFurA.value.copy(P.furA); U.uFurB.value.copy(P.furB);
+    this.speciesId = speciesId;
+    this.dino = buildHerrerasaurus(look.shape);
+    // The rig's own measurements (a reshaped species differs from the Herrerasaurus's 1.18 m pelvis).
+    this.pelvisY = this.dino.pelvisY;
+    this.rigHip = this.dino.hip;
+    this.rigLeg = this.dino.leg;
     this.root = this.dino.rig;
     this.dino.B.lipU.userData.rest = this.dino.B.lipU.position.clone();
     this.size = 1;
@@ -75,6 +85,7 @@ export class HerreraAnimator {
     const vN = s.speed / Math.sqrt(sz);
 
     // ---- gait ----
+    const HIP = this.rigHip, LEG = this.rigLeg;
     const v = s.speed, Fr = v * v / (9.81 * HIP * sz);
     const duty = 0.5 + 0.14 * Math.tanh((0.5 - Fr) / 0.25);
     const legL = LEG * sz;
@@ -159,7 +170,7 @@ export class HerreraAnimator {
       const bt = D.actT % 1.5;
       for (const ti of [0.1, 0.26, 0.42]) { nose += Math.exp(-(((bt - ti) / 0.035) ** 2)); if (bt >= ti && (D.actU < ti || D.actU > bt)) this.onSound?.('sniff', snout); }
       D.actU = bt;
-    } else if (D.act === 'eat') {
+    } else if (D.act === 'eat' || D.act === 'browse') {
       // Head down on the kill: grip, tear back, swallow.
       dipTo = s.dipY ?? null;
       hdT = 1; const P = 1.1, u = D.actT % P;
@@ -193,7 +204,7 @@ export class HerreraAnimator {
     const hd = D.hd, dip = D.dip * D.hd;
     // Walk: trunk a little nose-up. Sprint: trunk level and leaned forward, legs more bent.
     const pelvisPitch = -slope * 0.75 + D.pitchF + lerp(-0.03, 0.09, run) + hd * 0.22 + dip * 0.1 + lunge * 0.05;
-    B.pelvis.position.set(fallShift, 1.18 - 0.085 * run + bob - hd * 0.16 - dip * 0.08 + D.bodyY / sz - fallDrop, 0);
+    B.pelvis.position.set(fallShift, this.pelvisY - 0.085 * run + bob - hd * 0.16 - dip * 0.08 + D.bodyY / sz - fallDrop, 0);
     B.pelvis.rotation.set(pelvisPitch, 0.045 * Math.sin(ph) * mf, D.roll + fallRoll + 0.035 * Math.sin(ph) * mf);
     B.spine1.rotation.set(0, -0.025 * Math.sin(ph) * mf, 0);
     B.spine2.rotation.set(0, -0.02 * Math.sin(ph) * mf, 0);
