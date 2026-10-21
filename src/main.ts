@@ -5,8 +5,7 @@ import { groundAt, surfaceAt as surfaceKind } from './sim/ground';
 import { waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
-import { QuadAnimator } from './render/quadruped';
-import { QUAD_LOOKS } from './render/quadLooks';
+import { isQuad, QuadAnimator } from './render/quadruped';
 import { fernCut } from './render/dlist/env.js';
 import { dayTime } from './sim/clock';
 import { isSprinting, type Command } from './sim/dino';
@@ -71,7 +70,7 @@ let p = world.player;
 // hatchling and rebuilt when the species changes.
 // Two-legged species are the Herrerasaurus rig reshaped (shapes.js); four-legged ones have their own (quadruped.ts).
 type Animator = HerreraAnimator | QuadAnimator;
-const makeAnimator = (id: string): Animator => (QUAD_LOOKS[id] ? new QuadAnimator(id, QUAD_LOOKS[id]) : new HerreraAnimator(id));
+const makeAnimator = (id: string): Animator => (isQuad(id) ? new QuadAnimator(id) : new HerreraAnimator(id));
 let herrera: Animator = makeAnimator(p.species.id);
 view.scene.add(herrera.root);
 const rigScale = (): number => p.body.hip / herrera.rigHip;
@@ -127,6 +126,7 @@ ui.setRumble(rumble.enabled);
 ui.onRumbleButton(() => ui.setRumble(rumble.toggle()));
 // The game waits on the splash until the player hatches; the menu button pauses it.
 let started = false, paused = false;
+let viewZoom = 1; // ?debug can pull the camera in for close looks
 // One-shot presses wait for the next sim tick: at a high frame rate some frames run no tick at all.
 let pendingCall: Command['call'], pendingRespawn = false;
 ui.showIntro(true);
@@ -293,7 +293,7 @@ function frame(now: number): void {
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);
   herrera.root.visible = p.egg === 0;
-  cam.zoom = p.egg > 0 ? 1.8 : 1;
+  cam.zoom = p.egg > 0 ? 1.8 : viewZoom;
   smallMeshes.update(world.smalls, world.grubs, world.tick * TICK_DT, a, dt);
   sauroMeshes.update(world.sauros, a, dt);
   carcassMeshes.sync(world.carcasses, groundAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);
@@ -326,7 +326,7 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 // ?debug exposes the world and camera for automated checks (screenshots, headless playtests).
-if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, groundAt, hatch: (id: SpeciesId) => hatchAs(world, id), start: () => { started = true; ui.showIntro(false); } };
+if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, groundAt, hatch: (id: SpeciesId) => hatchAs(world, id), zoom: (z: number) => (viewZoom = z), start: () => { started = true; ui.showIntro(false); } };
 requestAnimationFrame(frame);
 
 // Test hook for automated checks.

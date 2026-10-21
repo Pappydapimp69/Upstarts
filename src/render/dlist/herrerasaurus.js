@@ -329,21 +329,41 @@ furMat.customProgramCacheKey = () => 'herrera-fur-v1';
 // (neck, head, tail, legs, arms), the mesh is deformed through its own skin weights, and the result is
 // baked as the new rest pose with unit bone scales, so animation rotations never shear a scaled parent.
 // shape: { neck, neckGirth, head, tail, tailGirth, legs, arms } (1 = Herrerasaurus).
+// Upstarts: each segment can be set on its own, so a species gets its own build rather than a scaled Herrerasaurus:
+// skull length, depth and width (headL, headD, headW, on top of head), trunk length, depth and width (torsoL, torsoD,
+// torsoW: a sauropodomorph's gut), and femur, tibia and metatarsus separately (femur, tibia, meta: a runner's long
+// shins and feet). Bones are world-aligned at bind, so a bone's x, y, z scale is width, height, length; each child
+// that should not inherit a parent's scale divides it back out.
 function reshape({ rig, bones, B, skeleton, meshes, legs, shape }) {
   const n = shape.neck ?? 1, ng = shape.neckGirth ?? 1, h = shape.head ?? 1, t = shape.tail ?? 1, tg = shape.tailGirth ?? 1;
   const l = shape.legs ?? 1, a = shape.arms ?? 1;
+  const hL = shape.headL ?? 1, hD = shape.headD ?? 1, hW = shape.headW ?? 1;
+  const tL = shape.torsoL ?? 1, tD = shape.torsoD ?? 1, tW = shape.torsoW ?? 1;
+  const lf = l * (shape.femur ?? 1), lt = l * (shape.tibia ?? 1), lm = l * (shape.meta ?? 1);
   const toeTip = legs.map((L) => L.toeTip.clone().sub(L.ball)); // feet keep their size
-  const plain = n === 1 && ng === 1 && h === 1 && t === 1 && tg === 1 && l === 1 && a === 1;
+  const tilt = shape.neckTilt ?? 0; // rad: carries the neck further forward (a sauropodomorph's), the head levelled
+  const plain = [n, ng, h, t, tg, l, a, hL, hD, hW, tL, tD, tW, lf, lt, lm].every((k) => k === 1) && !tilt;
   if (!plain) {
-    B.neck1.scale.set(ng, n, n);
-    B.head.scale.set(h / ng, h / n, h / n);
-    B.tail0.scale.set(tg, tg, t);
-    for (const S of ['L', 'R']) {
-      B['thigh' + S].scale.set(1, l, l);
-      B['toe' + S].scale.set(1, 1 / l, 1 / l);
-      B['upper' + S].scale.set(a, a, a);
+    if (tilt) {
+      B.neck1.rotation.x = tilt * 0.6;
+      B.neck2.rotation.x = tilt * 0.4;
+      B.head.rotation.x = -tilt;
     }
-    B.pelvis.position.y += (l - 1) * 1.105; // longer legs lift the body, feet stay on the ground
+    // Trunk from the first back vertebra forward; the neck and arms divide the trunk scale back out.
+    B.spine1.scale.set(tW, tD, tL);
+    B.neck1.scale.set(ng / tW, n / tD, n / tL);
+    B.head.scale.set((h * hW) / ng, (h * hD) / n, (h * hL) / n);
+    B.tail0.scale.set(tg, tg, t);
+    const L0 = legs[0], dy = (p, q) => Math.abs(p.y - q.y);
+    for (const S of ['L', 'R']) {
+      B['thigh' + S].scale.set(1, lf, lf);
+      B['shin' + S].scale.set(1, lt / lf, lt / lf);
+      B['meta' + S].scale.set(1, lm / lt, lm / lt);
+      B['toe' + S].scale.set(1, 1 / lm, 1 / lm);
+      B['upper' + S].scale.set(a / tW, a / tD, a / tL);
+    }
+    // Longer leg segments lift the body; the feet stay on the ground.
+    B.pelvis.position.y += (lf - 1) * dy(L0.hip, L0.knee) + (lt - 1) * dy(L0.knee, L0.ankle) + (lm - 1) * dy(L0.ankle, L0.ball);
     rig.updateMatrixWorld(true);
     skeleton.update();
     const v = V();
@@ -359,7 +379,10 @@ function reshape({ rig, bones, B, skeleton, meshes, legs, shape }) {
     }
     // Bake: bones at their new positions with unit scale, then bind again.
     const abs = bones.map((b) => b.getWorldPosition(V()));
-    for (const b of bones) b.scale.set(1, 1, 1);
+    for (const b of bones) {
+      b.scale.set(1, 1, 1);
+      b.rotation.set(0, 0, 0); // the bend is baked into the rest pose; the animator works from straight bones
+    }
     bones.forEach((b, i) => {
       const pi = bones.indexOf(b.parent);
       b.position.copy(abs[i]).sub(pi >= 0 ? abs[pi] : V());
@@ -524,7 +547,9 @@ function buildHerrerasaurus(shape = {}) {
   const bodyGeo = body.build();
   // Fuzz coverage per vertex: back, neck and upper tail; snout, belly and limbs stay scaly.
   const fzA = new Float32Array(bodyGeo.attributes.position.count), bpA = bodyGeo.attributes.position, bnA = bodyGeo.attributes.normal;
-  for (let v = 0; v < bodyVEnd; v++) { const z = bpA.getZ(v); fzA[v] = smooth(-0.2, 0.4, bnA.getY(v)) * smooth(-2.3, -1.75, z) * (1 - smooth(1.7, 1.86, z)); }
+  // shape.fur scales it per species (0: scaly all over).
+  const furK = shape.fur ?? 1;
+  for (let v = 0; v < bodyVEnd; v++) { const z = bpA.getZ(v); fzA[v] = furK * smooth(-0.2, 0.4, bnA.getY(v)) * smooth(-2.3, -1.75, z) * (1 - smooth(1.7, 1.86, z)); }
   bodyGeo.setAttribute('aFz', new THREE.BufferAttribute(fzA, 1));
   const furMesh = new THREE.SkinnedMesh(buildFur(bodyGeo, bodyIEnd, fzA), furMat);
   furMesh.receiveShadow = true; furMesh.frustumCulled = false; rig.add(furMesh);
@@ -559,4 +584,4 @@ function buildHerrerasaurus(shape = {}) {
     pelvisY: rest.pelvisY, hip: rest.hip, leg: rest.leg };
 }
 
-export { buildHerrerasaurus, skinU, BANDS, BAND_H };
+export { buildHerrerasaurus, skinU, BANDS, BAND_H, SkinBuilder, loft, makeProfile, arcLengths, curvedClaw };
