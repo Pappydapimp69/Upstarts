@@ -17,6 +17,7 @@ export interface RawInput {
   recenter: boolean;
   drink: boolean; // held
   eat: boolean; // held
+  rest: boolean; // held: lie down
   confirm: boolean; // pressed
   menu: boolean; // pressed
   toggle: boolean; // pressed: the option on the pause card (rumble)
@@ -95,7 +96,7 @@ function setDevice(d: Device): void {
   listeners.forEach((f) => f(d));
 }
 
-const touch = { mf: 0, mr: 0, sprint: 0, b: false, x: false, stickId: -1, lookId: -1, ox: 0, oy: 0, lx: 0, ly: 0 };
+const touch = { mf: 0, mr: 0, sprint: 0, b: false, x: false, rest: false, stickId: -1, lookId: -1, ox: 0, oy: 0, lx: 0, ly: 0 };
 
 // Deadzone on the stick's length, not per axis, so diagonals aren't squashed.
 function radial(x: number, y: number, inner = 0.16, outer = 0.96): [number, number] {
@@ -233,6 +234,7 @@ export function initInput(canvas: HTMLElement): void {
       if (k === 'a') confirm = true;
       else if (k === 'b') touch.b = true;
       else if (k === 'x') touch.x = true;
+      else if (k === 'rest') touch.rest = true;
       else if (k === 'cam') recenter = true;
       else if (k === 'menu') menu = true;
       else if (k === 'y') {
@@ -251,6 +253,7 @@ export function initInput(canvas: HTMLElement): void {
       b.classList.remove('down');
       if (k === 'b') touch.b = false;
       if (k === 'x') touch.x = false;
+      if (k === 'rest') touch.rest = false;
       if (k === 'y' && wheel.yDown) {
         wheel.yDown = false;
         clearTimeout(wheel.yTimer);
@@ -282,7 +285,7 @@ export function readInput(): RawInput {
   let moveR = k('KeyD') + k('ArrowRight') - k('KeyA') - k('ArrowLeft');
   let sprint = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : 0;
   let lookX = 0, lookY = 0;
-  let drink = keys.has('KeyG'), eat = keys.has('KeyE') || keys.has('KeyF');
+  let drink = keys.has('KeyG'), eat = keys.has('KeyE') || keys.has('KeyF'), rest = keys.has('KeyZ');
 
   const pad = navigator.getGamepads?.().find((p) => p && p.connected);
   if (pad) {
@@ -333,6 +336,7 @@ export function readInput(): RawInput {
     if (edge(10)) recenter = true; // left stick click: camera behind
     drink ||= bHeld; // B (hold)
     eat ||= btn(2) && !wheel.open; // X (hold)
+    rest ||= (pad.buttons[6]?.value ?? 0) > 0.3; // left trigger (hold)
     if (aEdge && !padConfirmWas) confirm = true;
     padConfirmWas = btn(0);
     pad.buttons.forEach((b, i) => (padWas[i] = b.pressed));
@@ -349,6 +353,7 @@ export function readInput(): RawInput {
     sprint = touch.sprint;
     drink ||= touch.b;
     eat ||= touch.x;
+    rest ||= touch.rest;
   }
 
   const m = Math.hypot(moveF, moveR);
@@ -358,7 +363,7 @@ export function readInput(): RawInput {
   }
   // Held R past a quarter second opens the wheel.
   if (wheel.rDown >= 0 && !wheel.open && playing && performance.now() - wheel.rDown > 250) openWheel('keys');
-  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, confirm, menu, toggle, call, nav };
+  const out: RawInput = { moveF, moveR, sprint, lookX, lookY, dragX, dragY, recenter, drink, eat, rest, confirm, menu, toggle, call, nav };
   dragX = dragY = 0;
   recenter = confirm = menu = toggle = false;
   call = null;

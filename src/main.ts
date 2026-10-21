@@ -5,6 +5,7 @@ import { heightAt, waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
 import { fernCut } from './render/dlist/env.js';
+import { dayTime } from './sim/clock';
 import { isSprinting, type Command } from './sim/dino';
 import { FollowCamera } from './render/camera';
 import { CarcassMeshes } from './render/worldMeshes';
@@ -168,6 +169,7 @@ function frame(now: number): void {
     prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
     cmd.call = pendingCall;
     cmd.respawn = pendingRespawn;
+    cmd.jump = pendingRespawn; // A / Space: hatch again while dead, tear the egg inside one, jump otherwise
     cmd.species = ui.selected;
     pendingCall = undefined;
     pendingRespawn = false;
@@ -189,7 +191,7 @@ function frame(now: number): void {
       if (ev.kind === 'hit' && ev.who === 'player') rumble.hit(0.45, 0.7, 90, performance.now(), inputState.device === 'touch');
       if (ev.kind === 'hit' && ev.who !== 'player' && Math.hypot(ev.x - p.x, ev.z - p.z) < 1.5) rumble.hit(0.7, 1, 180, performance.now(), inputState.device === 'touch');
     }
-    cmd.respawn = false; // a press acts once, not once per tick
+    cmd.respawn = cmd.jump = false; // a press acts once, not once per tick
     cmd.call = undefined;
     acc -= TICK_DT;
     if (world.player !== p) {
@@ -213,7 +215,9 @@ function frame(now: number): void {
     if (c) dipY = heightAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
   }
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
-    biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY }, dt);
+    biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
+    air: Math.max(0, y - heightAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, dt);
+  view.setTime(dayTime(world.tick * TICK_DT));
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);
   herrera.root.visible = p.egg === 0;

@@ -30,20 +30,30 @@ export function buildSkyAndLights(scene, renderer) {
   scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0115);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { uSun: { value: SUN_DIR } },
+    uniforms: { uSun: { value: SUN_DIR.clone() }, uDay: { value: 1 }, uDusk: { value: 0 } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-      uniform vec3 uSun; varying vec3 vDir;
+      uniform vec3 uSun; uniform float uDay; uniform float uDusk; varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
         float h = d.y;
-        vec3 zen = vec3(0.11, 0.2, 0.36);
-        vec3 hor = vec3(0.52, 0.5, 0.45);
-        vec3 gnd = vec3(0.30, 0.26, 0.21);
+        // Day colours fade to a moonlit night; at dawn and dusk the horizon toward the sun glows.
+        vec3 zen = mix(vec3(0.008, 0.012, 0.03), vec3(0.11, 0.2, 0.36), uDay);
+        vec3 hor = mix(vec3(0.03, 0.035, 0.06), vec3(0.52, 0.5, 0.45), uDay);
+        vec3 gnd = mix(vec3(0.02, 0.02, 0.025), vec3(0.30, 0.26, 0.21), uDay);
+        float toward = max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(uSun.x, 0.0, uSun.z) + 1e-5)), 0.0);
+        hor = mix(hor, vec3(0.85, 0.42, 0.2), uDusk * (0.35 + 0.65 * toward * toward));
         vec3 col = mix(hor, zen, pow(smoothstep(0.0, 1.0, max(h, 0.0)), 0.5));
         col = mix(col, gnd, smoothstep(0.0, -0.3, h));
         float s = max(dot(d, uSun), 0.0);
-        col += vec3(1.0, 0.9, 0.74) * (pow(s, 6.0) * 0.32 + pow(s, 900.0) * 9.0);
+        col += vec3(1.0, 0.9, 0.74) * (pow(s, 6.0) * 0.32 + pow(s, 900.0) * 9.0) * smoothstep(-0.06, 0.02, uSun.y);
+        // Stars and a moon opposite the sun once it's dark.
+        float night = 1.0 - smoothstep(0.0, 0.35, uDay);
+        vec3 sd = floor(d * 220.0);
+        float st = fract(sin(dot(sd, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+        col += vec3(0.8, 0.85, 1.0) * step(0.9975, st) * night * smoothstep(0.0, 0.25, h);
+        float m = max(dot(d, -uSun), 0.0);
+        col += vec3(0.75, 0.8, 0.9) * pow(m, 2500.0) * 3.0 * night;
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -70,7 +80,7 @@ export function buildSkyAndLights(scene, renderer) {
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.035;
   scene.add(sun, sun.target);
-  return { sun, sky };
+  return { sun, sky, hemi, skyMat };
 }
 
 /* ============================== textures ============================== */

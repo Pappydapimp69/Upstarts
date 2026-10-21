@@ -50,9 +50,9 @@ export const HERRERASAURUS: Species = make({
 });
 
 export const EODROMAEUS: Species = make({
-  id: 'eodromaeus', name: 'Eodromaeus', length: 1.2, hip: 0.33, mass: 5, diet: 'carnivore', biteMult: 0.9, build: 1.3,
+  id: 'eodromaeus', name: 'Eodromaeus', length: 1.2, hip: 0.33, mass: 5, diet: 'carnivore', biteMult: 0.9, build: 0.9,
   hatchSize: 0.35, toAdult: 1.2 * 3600,
-  blurb: 'Small, fast and fragile. Scavenges and snaps up what it can, and survives by running.',
+  blurb: 'Small and fragile. Scavenges and snaps up what it can, and survives by staying beneath notice.',
 });
 
 export const PANPHAGIA: Species = make({

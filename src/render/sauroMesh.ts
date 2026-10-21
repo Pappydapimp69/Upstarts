@@ -104,7 +104,7 @@ export class SauroMeshes {
       const x = m.px + (s.x - m.px) * alpha, z = m.pz + (s.z - m.pz) * alpha;
       const yaw = m.pyaw + Math.atan2(Math.sin(s.yaw - m.pyaw), Math.cos(s.yaw - m.pyaw)) * alpha;
       // Low and crouched while stalking.
-      m.lowered = damp(m.lowered, s.state === 'stalk' ? 1 : 0, 3, dt);
+      m.lowered = damp(m.lowered, s.state === 'stalk' ? 1 : s.state === 'sleep' ? 1.7 : 0, s.state === 'sleep' ? 1 : 3, dt); // asleep: belly on the ground
       m.root.position.set(x, heightAt(x, z) - m.lowered * 0.3, z);
       m.root.rotation.y = yaw;
       const half0 = Math.floor(m.phase * 2);

@@ -4,6 +4,7 @@ import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
+import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
 
 // Saurosuchus: the apex predator, a big crocodile-line archosaur. Rare, roams a
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
@@ -41,7 +42,7 @@ export const SAUROSUCHUS = {
   maxPreyFrac: 0.8, // of its own mass: bigger than this is too risky
 };
 
-export type SauroState = 'patrol' | 'stalk' | 'charge' | 'eat' | 'retreat' | 'rest' | 'dead';
+export type SauroState = 'patrol' | 'stalk' | 'charge' | 'eat' | 'retreat' | 'rest' | 'sleep' | 'dead';
 
 export interface Sauro {
   id: number;
@@ -59,6 +60,7 @@ export interface Sauro {
   wanderZ: number;
   target: number; // id of what it's hunting or eating, -1 none
   lastMeal: number; // world time (s)
+  wokeAt: number; // world time it was last woken (s)
   eaten: number; // kg this meal
   biteT: number;
   gait: number; // footfalls so far (4 per stride), for footstep events
@@ -77,7 +79,7 @@ export interface Quarry {
 export function createSauro(id: number, x: number, z: number): Sauro {
   return {
     id, x, z, yaw: 0, speed: 0, health: 1, stamina: 1, state: 'patrol', stateT: 0, homeX: x, homeZ: z,
-    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0,
+    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0, wokeAt: -999,
   };
 }
 
@@ -101,6 +103,7 @@ export interface SauroWorld {
   rand: () => number;
   quarry: Quarry[];
   heard?: SoundEvent[]; // last tick's sound events
+  night?: boolean; // a reptile: it sleeps through the night (D14)
   // Carcasses it can eat: id, position, meat.
   carcasses: { id: number; x: number; z: number; meat: number }[];
   // Called when its jaws close on something: returns nothing; the world applies damage.
@@ -130,6 +133,18 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
   const q = w.quarry.find((k) => k.id === s.target);
 
   if (s.health < S.retreatAt && s.state !== 'retreat') set('retreat');
+  // Night: off duty (patrolling or lying up) it goes to sleep where it is. It wakes to a loud sound or something
+  // right up against it, and at dawn. A bite wakes it too: the world turns it on the biter.
+  if (w.night && (s.state === 'rest' || s.state === 'patrol') && w.now - s.wokeAt > SETTLE) set('sleep');
+  if (s.state === 'sleep') {
+    const brushed = w.quarry.some((k) => Math.hypot(k.x - s.x, k.z - s.z) < WAKE_NEAR);
+    if (w.night && !brushed && loudestAt(w.heard ?? [], s.x, s.z, s.id) < WAKE_DB) {
+      s.speed = Math.max(0, s.speed - 4 * dt);
+      return;
+    }
+    if (w.night) s.wokeAt = w.now;
+    set('patrol');
+  }
 
   let yaw = s.yaw, target = 0, turn = S.turnSlow;
   switch (s.state) {

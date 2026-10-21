@@ -11,6 +11,7 @@ class HerbMesh {
   readonly legs: THREE.Object3D[] = [];
   phase = Math.random();
   headUp = 0;
+  sleep = 0; // 0 standing .. 1 lying asleep
   // Interpolation between ticks.
   px = 0; pz = 0; pyaw = 0;
   cx = 0; cz = 0; cyaw = 0;
@@ -89,7 +90,8 @@ export class HerbivoreMeshes {
       }
       const x = m.px + (h.x - m.px) * alpha, z = m.pz + (h.z - m.pz) * alpha;
       const yaw = m.pyaw + Math.atan2(Math.sin(h.yaw - m.pyaw), Math.cos(h.yaw - m.pyaw)) * alpha;
-      m.root.position.set(x, heightAt(x, z), z);
+      m.sleep = damp(m.sleep, h.state === 'sleep' ? 1 : 0, h.state === 'sleep' ? 1 : 4, dt);
+      m.root.position.set(x, heightAt(x, z) - m.sleep * 0.3, z);
       m.root.rotation.y = yaw;
       // Sprawling diagonal gait: legs swing in diagonal pairs.
       const half0 = Math.floor(m.phase * 2);
@@ -99,12 +101,13 @@ export class HerbivoreMeshes {
       m.legs.forEach((l, i) => {
         const diag = i === 0 || i === 3 ? 0 : 0.5;
         l.rotation.x = Math.sin((m!.phase + diag) * Math.PI * 2) * swing;
+        l.rotation.z = (i % 2 ? 1 : -1) * 1.1 * m!.sleep; // asleep: legs sprawled out to the sides
       });
       // Head down to crop plants while grazing and still, up when alert or running.
       const down = h.state === 'graze' && h.speed < 0.2 ? 1 : 0;
       m.headUp = damp(m.headUp, h.state === 'alert' ? -1 : down, 6, dt);
       const nibble = down ? Math.sin(performance.now() / 180 + h.id) * 0.08 : 0;
-      m.head.rotation.x = m.headUp * 0.5 + nibble;
+      m.head.rotation.x = m.headUp * 0.5 + nibble + m.sleep * 0.35;
     }
     for (const [id, m] of this.meshes) {
       if (!live.has(id)) {

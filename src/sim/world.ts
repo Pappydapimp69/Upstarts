@@ -5,7 +5,7 @@ import { NEEDS, needPace, stepNeeds } from './needs';
 import { browseAt } from './flora';
 import { heightAt, SPAWNS, waterDepthAt } from './terrain';
 import { SPECIES, type SpeciesId } from './species';
-import { wrapAngle } from './math';
+import { lerp, wrapAngle } from './math';
 import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
@@ -15,6 +15,7 @@ import { bodyOf, GROWTH } from './growth';
 import type { SoundEvent } from './events';
 import { SPRINT_DB, STEP_DB } from './hearing';
 import { createSmall, exaeretodonHome, exposed, GRUB, placeBurrows, placeGrubs, respawnSmall, SMALL, SMALL_POP, smallMass, stepSmall, SWALLOW_BELOW, type Grub, type Small } from './smallprey';
+import { dayTime, isNight } from './clock';
 import { CALLS, callLevel, heardAt, HERD_HEARS, roarStyle, SAURO_HEARS } from './calls';
 
 export const TICK_HZ = 30;
@@ -185,7 +186,8 @@ function addHerbivore(w: World, herd: Herd, x: number, z: number): void {
 // What the herbivores can see of a predator this tick (hearing goes through sound events).
 function predatorOf(slot: PlayerSlot): Predator {
   const d = slot.dino;
-  return { id: slot.entity, x: d.x, z: d.z, speed: d.speed, alive: d.alive, mass: d.body.mass, stealth: 1 };
+  // Lying down in cover it's harder to pick out.
+  return { id: slot.entity, x: d.x, z: d.z, speed: d.speed, alive: d.alive, mass: d.body.mass, stealth: lerp(1, 0.5, d.rest) };
 }
 function predatorOfSauro(s: Sauro): Predator {
   return {
@@ -365,8 +367,11 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     let food: Carcass | null = null;
     d.biteT += dt;
     d.sniff = null;
-    const prey = cmd.eat ? preyInReach(w, d) : null;
-    if (cmd.drink) {
+    // Lying down or mid-jump, it can't drink, eat or bite.
+    const free = !d.resting && d.rest < 0.3 && !d.jump;
+    const wantEat = free && !!cmd.eat, wantDrink = free && !!cmd.drink;
+    const prey = wantEat ? preyInReach(w, d) : null;
+    if (wantDrink) {
       const water = findWater(d);
       if (water) ({ act, ov } = approach(d, water.yaw, water.dist, d.body.snout, 'drink'));
       else {
@@ -425,7 +430,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
           }
         }
       }
-    } else if (cmd.eat) {
+    } else if (wantEat) {
       let bestD = d.body.reach + CARCASS.radius;
       for (const c of w.carcasses) {
         const dist = Math.hypot(c.x - d.x, c.z - d.z);
@@ -478,7 +483,9 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     // Footfalls: stride from Alexander's relation, two feet per stride; a sprint slams (+10 dB noise rating).
     const v = d.speed, legL = d.body.leg;
     const stride = Math.max(0.8 * d.body.size, 2.3 * legL * Math.pow((v * v) / (9.81 * legL), 0.3));
-    footfalls(w, d, slot.entity, d.x, d.z, d.body.mass, v, stride, 2, dt, isSprinting(d, cmd) ? SPRINT_DB : 0);
+    if (d.air <= 0) footfalls(w, d, slot.entity, d.x, d.z, d.body.mass, v, stride, 2, dt, isSprinting(d, cmd) ? SPRINT_DB : 0);
+    // Landing from a jump: both feet at once, louder the harder it comes down.
+    if (d.jumpLanded > 0) w.events.push({ kind: 'step', who: 'player', id: slot.entity, x: d.x, y: heightAt(d.x, d.z), z: d.z, level: STEP_DB(d.body.mass, d.jumpLanded) + 6 });
     d.callT += dt;
     // Calls: one at a time. Loud ones startle the herds that hear them, and draw a hungry Saurosuchus.
     if (cmd.call && d.callT >= d.callDur) {
@@ -527,6 +534,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
 
   // Saurosuchus: hunts the player and the herds, eats carcasses.
   const now = w.tick * TICK_DT;
+  const night = isNight(dayTime(now));
   const quarry: Quarry[] = [];
   for (const slot of w.players) {
     const p = slot.dino;
@@ -538,7 +546,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   for (const s of w.sauros) {
     const was = s.state;
     stepSauro(s, {
-      now, rand: w.rng.ai, quarry, heard, carcasses: w.carcasses,
+      now, rand: w.rng.ai, quarry, heard, night, carcasses: w.carcasses,
       bite: (id) => {
         w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 2.6, 0.9), level: 96 });
         const slot = w.players.find((k) => k.entity === id);
@@ -610,7 +618,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   const preds = [...w.players.map(predatorOf), ...w.sauros.map(predatorOfSauro)];
   for (const h of w.herbivores) {
     const herd = w.herds[h.herd];
-    stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now, heard);
+    stepHerbivore(h, herd, w.herbivores, preds, w.rng.ai, dt, now, heard, night);
     footfalls(w, h, h.id, h.x, h.z, HYPERODAPEDON.mass, h.speed, 0.9, 4, dt);
   }
   for (const m of w.smalls) {

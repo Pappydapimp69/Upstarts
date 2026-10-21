@@ -92,9 +92,29 @@ export class HerreraAnimator {
     const stride = Math.max(0.8 * sz, 2.3 * legL * Math.pow(v * v / (9.81 * legL), 0.3));
     const rootG = heightAt(s.x, s.z);
     const legs = dino.legs, L0 = legs[0], L1 = legs[1];
-    if (s.alive) {
+    const neutralW = (L) => L.neutral.clone().multiplyScalar(sz).applyAxisAngle(UP, s.yaw).add(pos);
+    const air = s.air || 0;
+    if (s.alive && air > 0.002) {
+      // Airborne: the feet ride with the body, tucked up through the middle of the leap.
+      D.airT = (D.airT || 0) + dt;
+      const tuck = smooth(0.05, 0.2, D.airT) * smooth(0.02, 0.3 * sz, air) * 0.3 * HIP * sz;
+      for (const L of legs) {
+        const w = neutralW(L);
+        L.footPos.set(w.x, rootG + air + 0.035 * sz + tuck, w.z);
+        L.planted.copy(L.footPos); L.swing = false; L.liftS = 0; L.groundY = rootG;
+      }
+      D.wasAir = true;
+    } else if (s.alive && D.wasAir) {
+      // Touchdown: both feet land under the body at once.
+      D.wasAir = false; D.airT = 0; D.land = 1;
+      for (const L of legs) {
+        const w = neutralW(L);
+        L.footPos.set(w.x, heightAt(w.x, w.z) + 0.035 * sz, w.z);
+        L.planted.copy(L.footPos); L.swing = false; L.groundY = L.footPos.y - 0.035 * sz;
+        this.onStep?.(L.planted, L.sx);
+      }
+    } else if (s.alive) {
       const anySwing = legs.some((L) => L.swing);
-      const neutralW = (L) => L.neutral.clone().multiplyScalar(sz).applyAxisAngle(UP, s.yaw).add(pos);
       const anyErr = legs.some((L) => !L.swing && Math.hypot(L.planted.x - neutralW(L).x, L.planted.z - neutralW(L).z) > 0.3 * sz);
       if (v > 0.12 * sz || anySwing || anyErr) { const f = Math.max(v / stride, 0.95 / Math.sqrt(sz)); D.phase = (D.phase + f * dt) % 1; D.cycleT = 1 / f; }
       // Lean comes from the feet: plant the support window back when accelerating, forward when braking (E4).
@@ -179,6 +199,7 @@ export class HerreraAnimator {
       if (u >= 0.42 && (D.actU < 0.42 || D.actU > u)) this.onSound?.('tear', snout);
       D.actU = u;
     }
+    hdT = Math.max(hdT, 0.55 * (s.rest || 0));
     D.hd = damp(D.hd, hdT, 5, dt); D.hu = damp(D.hu, huT, 4, dt); D.tilt = damp(D.tilt, tiltT, 6, dt); D.hyaw = damp(D.hyaw, hyawT, 4, dt);
     if (dipTo != null && D.hd > 0.6) D.dip = clamp(D.dip + (snout.y - dipTo) / sz * 2.5 * dt, -0.3, 0.8); else D.dip = damp(D.dip, 0, 2, dt);
     const gv = skinU.uGulp.value;
@@ -198,13 +219,17 @@ export class HerreraAnimator {
     D.roll = damp(D.roll, rollT, 6, dt); D.pitchF = damp(D.pitchF, pitchT, 6, dt);
     const footLow = Math.min(L0.groundY, L1.groundY), footAvg = (L0.groundY + L1.groundY) / 2;
     D.bodyY = damp(D.bodyY, clamp(lerp(footAvg, footLow, 0.4) - rootG, -0.35 * sz, 0.55 * sz) * 0.85, 10, dt);
-    dino.rig.position.set(s.x, rootG, s.z);
+    dino.rig.position.set(s.x, rootG + air, s.z);
     dino.rig.rotation.set(0, s.yaw, 0);
     dino.rig.scale.setScalar(sz);
     const hd = D.hd, dip = D.dip * D.hd;
     // Walk: trunk a little nose-up. Sprint: trunk level and leaned forward, legs more bent.
     const pelvisPitch = -slope * 0.75 + D.pitchF + lerp(-0.03, 0.09, run) + hd * 0.22 + dip * 0.1 + lunge * 0.05;
-    B.pelvis.position.set(fallShift, this.pelvisY - 0.085 * run + bob - hd * 0.16 - dip * 0.08 + D.bodyY / sz - fallDrop, 0);
+    // Lying down to rest, crouching to jump, and the squash of a landing.
+    const rest = s.rest || 0, crouch = s.crouch || 0;
+    D.land = Math.max(0, (D.land || 0) - dt * 4);
+    const down = 0.62 * this.pelvisY * smooth(0, 1, rest) + 0.2 * this.pelvisY * crouch + 0.12 * this.pelvisY * D.land;
+    B.pelvis.position.set(fallShift, this.pelvisY - 0.085 * run + bob - hd * 0.16 - dip * 0.08 + D.bodyY / sz - fallDrop - down, 0);
     B.pelvis.rotation.set(pelvisPitch, 0.045 * Math.sin(ph) * mf, D.roll + fallRoll + 0.035 * Math.sin(ph) * mf);
     B.spine1.rotation.set(0, -0.025 * Math.sin(ph) * mf, 0);
     B.spine2.rotation.set(0, -0.02 * Math.sin(ph) * mf, 0);
@@ -234,7 +259,7 @@ export class HerreraAnimator {
     D.tailYaw += D.tailYawV * dt;
     const wag = 0.07 * Math.sin(ph + 1.3) * mf * (1 - 0.5 * run) + 0.04 * Math.sin(D.time * 0.8) * (1 - mf);
     // Walk: slight droop. Sprint: held straight out.
-    const tailPitch = lerp(-0.02, 0.03, run) + bob * 0.6 - lie * 0.06;
+    const tailPitch = lerp(-0.02, 0.03, run) + bob * 0.6 - lie * 0.06 + 0.12 * rest;
     dino.tails.forEach((t, k) => t.rotation.set(tailPitch * (1 + k * 0.1) + (k === 0 ? slope * 0.5 - D.pitchF * 0.5 - hd * 0.12 : 0), TAIL_W[k] * (D.tailYaw + wag), 0));
     for (const S of ['L', 'R']) {
       const sgnA = S === 'L' ? 1 : -1;

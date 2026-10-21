@@ -22,9 +22,10 @@ describe('species', () => {
     expect(maxHp(SANJUANSAURUS.mass)).toBeGreaterThan(maxHp(PANPHAGIA.mass));
   });
 
-  it('Eodromaeus is the fastest for its size, Herrerasaurus the fastest outright', () => {
+  it('Herrerasaurus is the fastest outright; Eodromaeus is no faster for its size than Panphagia', () => {
     const rel = (s: typeof EODROMAEUS): number => s.sprintMax / Math.sqrt(s.hip);
-    expect(rel(EODROMAEUS)).toBeGreaterThan(rel(PANPHAGIA));
+    expect(rel(EODROMAEUS)).toBeLessThanOrEqual(rel(PANPHAGIA));
+    expect(EODROMAEUS.sprintMax).toBeLessThan(4); // m/s: was 5.2, felt far too fast
     expect(HERRERASAURUS.sprintMax).toBeGreaterThan(SANJUANSAURUS.sprintMax);
   });
 

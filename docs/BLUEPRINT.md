@@ -432,7 +432,7 @@ time on art (M5).**
 | D8 | Fully procedural sound engine. No recorded or designed audio. | LOCKED |
 | D9 | Game name: **Upstarts**. The full game lives in its own repo, `upstarts`. Dlist stays the shareable demo and tutorial. | LOCKED |
 | D10 | Death is permanent for that creature. You respawn as a new hatchling. | LOCKED |
-| D11 | Day/night: 60 min of daylight (the sun within ±15° of its highest point for 40 of them), then 20 min of night. | LOCKED |
+| D11 | Day/night: 60 min of daylight (the sun within ±15° of its highest point for 40 of them), then 20 min of night. Built: a new world starts 15 min after dawn. | LOCKED |
 | D12 | Survival stats: hunger, thirst, stamina, health; injuries later; no temperature in v1. | LOCKED |
 | D13 | After a death only records carry over (longest life, kills). No unlocks or skins. | LOCKED |
 | D14 | Non-dinosaur reptiles sleep at night; dinosaurs, the player included, stay active. | LOCKED |

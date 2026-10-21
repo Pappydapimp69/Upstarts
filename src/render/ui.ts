@@ -1,6 +1,7 @@
 // HUD and menus in the Dlist demo's field-specimen style (index.html holds the markup and CSS).
 import type { Dino } from '../sim/dino';
-import { EGG, type World } from '../sim/world';
+import { EGG, TICK_DT, type World } from '../sim/world';
+import { CLOCK, dayTime } from '../sim/clock';
 import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
 import { SPECIES, SPECIES_ORDER, type SpeciesId } from '../sim/species';
@@ -29,6 +30,12 @@ const fmt = (s: number): string => {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
 };
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
+// What a player would call the time (D11: 10 min dawn, 40 min high sun, 10 min dusk, 20 min night).
+function partOfDay(u: number): string {
+  const { dawn, high, dusk } = CLOCK;
+  return u < dawn ? 'Dawn' : u < dawn + high * 0.35 ? 'Morning' : u < dawn + high * 0.65 ? 'Midday' : u < dawn + high ? 'Afternoon'
+    : u < dawn + high + dusk ? 'Dusk' : 'Night';
+}
 const BINOMIAL: Record<SpeciesId, string> = {
   herrerasaurus: 'Herrerasaurus ischigualastensis',
   eodromaeus: 'Eodromaeus murphi',
@@ -39,11 +46,11 @@ const PICK_KEY = 'upstarts.species';
 
 const KEYS: Record<Device, [string, string][]> = {
   pad: [['Move', 'Left stick'], ['Camera', 'Right stick'], ['Sprint', 'Right trigger (hold)'], ['Drink / sniff', 'B (hold)'],
-    ['Eat / bite', 'X (hold)'], ['Roar', 'Y'], ['Calls', 'Click right stick'], ['Camera behind', 'Click left stick'], ['Menu', 'Start']],
+    ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'Left trigger (hold)'], ['Roar', 'Y'], ['Calls', 'Click right stick'], ['Camera behind', 'Click left stick'], ['Menu', 'Start']],
   keys: [['Move', 'W A S D'], ['Camera', 'Drag the mouse'], ['Sprint', 'Shift (hold)'], ['Drink / sniff', 'G (hold)'],
-    ['Eat / bite', 'E or F (hold)'], ['Roar', 'R'], ['Calls', 'Hold R, or 1 to 6'], ['Camera behind', 'C'], ['Menu', 'Esc']],
+    ['Eat / bite', 'E or F (hold)'], ['Jump', 'Space'], ['Rest', 'Z (hold)'], ['Roar', 'R'], ['Calls', 'Hold R, or 1 to 6'], ['Camera behind', 'C'], ['Menu', 'Esc']],
   touch: [['Move', 'Left thumb (push to the edge to sprint)'], ['Camera', 'Drag on the right'], ['Drink / sniff', 'B (hold)'],
-    ['Eat / bite', 'X (hold)'], ['Roar', 'Y'], ['Calls', 'Hold Y'], ['Camera behind', '\u21BA'], ['Menu', '\u2630']],
+    ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'LT (hold)'], ['Roar', 'Y'], ['Calls', 'Hold Y'], ['Camera behind', '\u21BA'], ['Menu', '\u2630']],
 };
 const BTN: Record<Device, { drink: string; eat: string; go: string }> = {
   pad: { drink: 'B', eat: 'X', go: 'A' },
@@ -142,7 +149,7 @@ export class Ui {
 
     const stage = stageOf(d.growth);
     document.querySelector('.binomial')!.textContent = BINOMIAL[d.species.id];
-    this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · Ischigualasto, about 231 million years ago`;
+    this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))} · Ischigualasto, about 231 million years ago`;
 
     const n = d.needs;
     const v: Record<string, number> = { health: n.health, hunger: n.hunger, thirst: n.thirst, stamina: d.stamina, growth: d.growth };
@@ -160,6 +167,8 @@ export class Ui {
     for (const [k, el] of this.vals) el.textContent = txt[k];
     const sp = d.speed;
     this.el('pace').textContent = !d.alive ? 'Dead' : d.egg > 0 ? 'Inside the egg'
+      : d.jump ? (d.jump.ph === 'crouch' ? 'Crouching to jump' : 'Airborne')
+      : d.resting ? (d.stamina < 0.995 ? 'Lying down, resting' : 'Lying down, rested') : d.rest > 0.05 ? 'Getting up'
       : sp < 0.15 ? 'Standing' : `${sp < 0.68 * d.body.sprintMax ? (sp < 1.6 * d.body.size ** 0.5 ? 'Walking' : 'Running') : 'Sprinting'} · ${sp.toFixed(1)} m/s`;
 
     const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs' : d.act === 'bite' ? 'Biting'

@@ -4,6 +4,7 @@ import { plume } from './scent';
 import { pushOutOfTrees } from './flora';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
+import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
 
 // Hyperodapedon: beaked rhynchosaur, the most common animal in the valley and
 // the main prey. Herding and the numbers below are game design informed by the
@@ -25,7 +26,7 @@ export const HYPERODAPEDON = {
   ignoreBelow: 24, // kg: predators smaller than this aren't worth running from
 };
 
-export type HerbState = 'graze' | 'walk' | 'alert' | 'flee' | 'dead';
+export type HerbState = 'graze' | 'walk' | 'alert' | 'flee' | 'sleep' | 'dead';
 
 export interface Herbivore {
   id: number;
@@ -83,13 +84,27 @@ export function senses(h: Herbivore, p: Predator, heard: SoundEvent[] = []): boo
   return plume(p.x, p.z, 1, h.x, h.z) > HYPERODAPEDON.smell;
 }
 
-export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds: Predator[], rand: () => number, dt: number, now: number, heard: SoundEvent[] = []): void {
+export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds: Predator[], rand: () => number, dt: number, now: number,
+  heard: SoundEvent[] = [], night = false): void {
   if (h.state === 'dead') {
     h.speed = Math.max(0, h.speed - 6 * dt);
     return;
   }
   h.stateT += dt;
   h.bleeding = Math.max(0, h.bleeding - dt);
+  // Asleep (D14, a reptile at night): eyes shut, it wakes only to a loud sound, a bite, a body right up against it,
+  // or a herd-mate bolting past. Otherwise it lies still until dawn.
+  if (h.state === 'sleep') {
+    const brushed = preds.some((k) => k.alive && k.mass >= HYPERODAPEDON.ignoreBelow && Math.hypot(k.x - h.x, k.z - h.z) < WAKE_NEAR);
+    const bolting = all.some((o) => o.herd === h.herd && o.state === 'flee' && Math.hypot(o.x - h.x, o.z - h.z) < NEAR);
+    if (night && !brushed && !bolting && h.bleeding <= 0 && loudestAt(heard, h.x, h.z, h.id) < WAKE_DB) {
+      h.speed = Math.max(0, h.speed - 4 * dt);
+      return;
+    }
+    h.state = night ? 'alert' : 'graze';
+    h.stateT = 0;
+    if (night) h.alarmAt = now; // woken with a start
+  }
   // The nearest predator it can sense is the one it runs from.
   let p: Predator | null = null;
   for (const k of preds) {
@@ -146,6 +161,12 @@ export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds:
   } else if (calmT > CALM && h.bleeding <= 0) {
     h.state = 'walk';
     h.stateT = 0;
+  }
+  // Night: once calm, it settles down where it is.
+  if (night && (h.state === 'graze' || h.state === 'walk') && calmT > SETTLE) {
+    h.state = 'sleep';
+    h.stateT = 0;
+    return;
   }
 
   const sp = HYPERODAPEDON;
