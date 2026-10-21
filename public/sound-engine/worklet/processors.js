@@ -42,10 +42,25 @@ class SourceProcessor extends AudioWorkletProcessor {
     this.mute = new Ramp(1);
     this.alive = true;
     this.out = [0, 0];
+    // Sleep (local change, Upstarts): a source whose generator has been silent for longer than its delay line
+    // holds stops computing and outputs zeros until its next trigger. Most sources are idle most of the time, and
+    // running every one per sample overran the audio thread on phones (crackle).
+    this.quiet = 0;
+    this.asleep = false;
     this.port.onmessage = (e) => this.onMessage(e.data);
   }
 
+  wake() {
+    if (!this.asleep) return;
+    this.asleep = false;
+    this.quiet = 0;
+    // Positions kept arriving while it slept: jump to them rather than glide (the line holds only silence).
+    const sp = this.spatial;
+    for (const r of [sp.delay, sp.gain, sp.sendGain, sp.left, sp.right, sp.itdL, sp.itdR]) r.reset(r.target);
+  }
+
   onMessage(m) {
+    if (m.type === 'call' || m.type === 'step' || m.type === 'burst' || m.type === 'strike' || m.type === 'water' || m.type === 'unmute') this.wake();
     switch (m.type) {
       case 'spatial': this.spatial.update(m.p); break;
       case 'call': this.mute.setTarget(1, 64); this.gen.call?.(m); break;
@@ -72,13 +87,22 @@ class SourceProcessor extends AudioWorkletProcessor {
     const [L, R] = outputs[0];
     const S = outputs[1] && outputs[1][0];
     const n = L.length;
+    if (this.asleep) {
+      L.fill(0);
+      if (R) R.fill(0);
+      if (S) S.fill(0);
+      return this.alive;
+    }
     for (let i = 0; i < n; i++) {
       const x = this.gen.process() * this.mute.next();
+      this.quiet = x > 1e-6 || x < -1e-6 ? 0 : this.quiet + 1;
       this.spatial.process(x, this.out);
       L[i] = this.out[0];
       if (R) R[i] = this.out[1];
       if (S) S[i] = this.spatial.send * this.send.next();   // tapped before the distance gain
     }
+    // Asleep once the silence has passed all the way through the delay line, with a quarter second to spare.
+    if (this.quiet > this.spatial.delay.value + 0.25 * sampleRate) this.asleep = true;
     return this.alive;
   }
 }
@@ -101,6 +125,7 @@ class ReverbProcessor extends AudioWorkletProcessor {
     this.fadeLen = Math.round(0.4 * sampleRate);
     this.oa = [0, 0];
     this.ob = [0, 0];
+    this.quiet = 0; // samples of silence in and out (local change: sleeps like the sources)
     this.port.onmessage = (e) => {
       const m = e.data;
       const z2 = m.type === 'zone' ? ZONES[m.name] : m.type === 'decay' ? { ...m, size: m.size ?? this.size } : null;
@@ -119,6 +144,15 @@ class ReverbProcessor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const inp = inputs[0] && inputs[0][0];
     const [L, R] = outputs[0];
+    // Nothing coming in and the tail has died away: output silence without running the network.
+    let live = false;
+    if (inp) for (let i = 0; i < inp.length && !live; i++) live = inp[i] > 1e-7 || inp[i] < -1e-7;
+    if (!live && !this.b && this.quiet > 0.5 * sampleRate) {
+      L.fill(0);
+      if (R) R.fill(0);
+      return true;
+    }
+    if (live) this.quiet = 0;
     for (let i = 0; i < L.length; i++) {
       const x = inp ? inp[i] : 0;
       this.a.process(this.b ? x * (this.fade < this.fadeLen ? 1 : 0) : x, this.oa);
@@ -133,6 +167,7 @@ class ReverbProcessor extends AudioWorkletProcessor {
         L[i] = this.oa[0];
         if (R) R[i] = this.oa[1];
       }
+      if (!live) this.quiet = Math.abs(this.oa[0]) + Math.abs(this.oa[1]) > 1e-6 ? 0 : this.quiet + 1;
     }
     return true;
   }

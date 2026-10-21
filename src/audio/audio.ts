@@ -49,7 +49,8 @@ export class AudioLayer {
     const C = window.AudioContext || (window as any).webkitAudioContext;
     if (!C) return;
     try {
-      this.ctx = new C({ latencyHint: 'interactive' });
+      // Phones get a bigger audio buffer: the smallest one leaves no slack, and a late block is a crackle.
+      this.ctx = new C({ latencyHint: matchMedia('(pointer: coarse)').matches ? 'balanced' : 'interactive' });
     } catch {
       return;
     }

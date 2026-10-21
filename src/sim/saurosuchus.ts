@@ -10,7 +10,9 @@ import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
 // its speeds are guesses, labelled as such. Size is scaled back (owner's call) to the measured
 // sub-adults, 4.07 m and 385 kg (Brain dlist/E98: mass = 5.71 L^3), so it only kills in one bite
-// when it massively outclasses its target (D17's cap), and an adult Herrerasaurus takes 3 bites.
+// when it massively outclasses its target (D17's cap). At that size it bites by its weight alone, with no
+// armour bonus, and a full-grown Herrerasaurus is its predator, not its prey (the owner's call, D20): it
+// won't hunt one, it backs off from one that comes at it, and loses a straight fight.
 export const SAUROSUCHUS = {
   name: 'Saurosuchus',
   length: 4.1, // m, a sub-adult like the measured specimens
@@ -28,8 +30,8 @@ export const SAUROSUCHUS = {
   reach: 2.0, // m from its centre to what its jaws can close on (scaled with length)
   biteCone: 0.6,
   biteEvery: 1.4, // s
-  biteMult: 1.2, // heavy skull: bites harder than its mass alone gives
-  hide: 1.5, // osteoderms down the back: bites do two thirds of the damage
+  biteMult: 1, // bites by its weight, like everything else (D20)
+  hide: 1, // osteoderms run down the back; bites land on the flanks and neck, so no damage reduction (D20)
   sight: 50,
   smell: 0.12,
   hears: 45, // dB: the quietest footfall or call it notices
@@ -41,10 +43,13 @@ export const SAUROSUCHUS = {
   heal: 1 / 400, // health/s while not fighting
   territory: 50, // m radius around its home
   minPrey: 25, // kg: smaller than this isn't worth chasing
-  maxPreyFrac: 1.0, // of its own mass: bigger than this is too risky (an adult Herrerasaurus is still prey)
+  maxPreyFrac: 0.6, // of its own mass: bigger than this is too risky (a full-grown Herrerasaurus isn't prey, D20)
+  fearFrac: 0.75, // of its own mass: anything this heavy coming at it is a threat it runs from
+  fearNear: 14, // m: a threat this close (seen, heard or smelled) sends it off
+  fearSafe: 30, // m: far enough to stop running
 };
 
-export type SauroState = 'patrol' | 'stalk' | 'charge' | 'eat' | 'retreat' | 'rest' | 'sleep' | 'dead';
+export type SauroState = 'patrol' | 'stalk' | 'charge' | 'eat' | 'retreat' | 'flee' | 'rest' | 'sleep' | 'dead';
 
 export interface Sauro {
   id: number;
@@ -66,6 +71,7 @@ export interface Sauro {
   eaten: number; // kg this meal
   biteT: number;
   gait: number; // footfalls so far (4 per stride), for footstep events
+  threat: number; // id of what it's running from (flee), -1 none
 }
 
 // Something it could hunt this tick: the player or a herbivore.
@@ -81,7 +87,7 @@ export interface Quarry {
 export function createSauro(id: number, x: number, z: number): Sauro {
   return {
     id, x, z, yaw: 0, speed: 0, health: 1, stamina: 1, state: 'patrol', stateT: 0, homeX: x, homeZ: z,
-    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0, wokeAt: -999,
+    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0, wokeAt: -999, threat: -1,
   };
 }
 
@@ -148,8 +154,37 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
     set('patrol');
   }
 
+  // Something big enough to kill it coming its way: it gives up whatever it was doing (even a carcass) and runs.
+  // Not mid-charge: bitten, it turns on the biter (the world sets that), and a cornered animal fights.
+  if (s.state !== 'flee' && s.state !== 'charge') {
+    for (const k of w.quarry) {
+      const d = Math.hypot(k.x - s.x, k.z - s.z);
+      if (k.mass >= S.mass * S.fearFrac && d < S.fearNear && (d < 6 || sensesQuarry(s, k, w.heard))) {
+        s.threat = k.id;
+        s.target = -1;
+        set('flee');
+        break;
+      }
+    }
+  }
+
   let yaw = s.yaw, target = 0, turn = S.turnSlow;
   switch (s.state) {
+    case 'flee': {
+      const t = w.quarry.find((k) => k.id === s.threat);
+      const d = t ? Math.hypot(t.x - s.x, t.z - s.z) : Infinity;
+      if (!t || d > S.fearSafe || s.stateT > 30) {
+        s.threat = -1;
+        set('rest');
+        break;
+      }
+      // Straight away from it; flat out while its wind lasts, then a laboured trot.
+      yaw = steerTo(s, 2 * s.x - t.x, 2 * s.z - t.z);
+      s.stamina = clamp(s.stamina - dt / S.sprintTime, 0, 1);
+      target = s.stamina > 0 ? S.charge : S.patrol * 2;
+      turn = S.turnFast * 1.5;
+      break;
+    }
     case 'patrol':
     case 'rest': {
       // Eat any carcass it comes across when hungry. After a chase it lies up until it has its
@@ -226,7 +261,8 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
       // Give up when the gap can't close in the sprint left (dlist/E11), or it's out of breath.
       const closing = s.speed - q.speed;
       const reach = Math.max(0, closing) * s.stamina * S.sprintTime + S.reach;
-      if (s.stamina <= 0 || (s.stateT > 1.5 && d > reach + 2) || fromHome > S.territory + 25) {
+      // Out of breath it can't chase, but it still bites what's right on top of it (a cornered animal fights).
+      if ((s.stamina <= 0 && d > S.reach * 1.5) || (s.stateT > 1.5 && d > reach + 2) || fromHome > S.territory + 25) {
         s.target = -1;
         set('rest');
         break;
@@ -241,6 +277,12 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
       if (d < S.reach && Math.abs(wrapAngle(yaw - s.yaw)) < S.biteCone && s.biteT >= S.biteEvery) {
         s.biteT = 0;
         w.bite(q.id);
+        // Against something it fears it snaps once and runs while it still has the breath to (bite and run).
+        if (q.mass >= S.mass * S.fearFrac && s.stamina > 0.3) {
+          s.threat = q.id;
+          s.target = -1;
+          set('flee');
+        }
       }
       break;
     }

@@ -468,8 +468,8 @@ function snapJaws(w: World, slot: PlayerSlot): void {
     w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 1.1), level: 100 });
     shove(w, s.id, d.yaw, share, mass, SAUROSUCHUS.mass);
     if (s.health <= 0) s.state = 'dead';
-    // Bitten, it turns on whatever bit it, hungry or not.
-    else if (s.state !== 'retreat' && s.state !== 'charge') {
+    // Bitten, it turns on whatever bit it, hungry or not; running from it with breath to spare, it keeps running.
+    else if (s.state !== 'retreat' && s.state !== 'charge' && !(s.state === 'flee' && s.stamina > 0.3)) {
       s.target = slot.entity;
       s.state = 'charge';
       s.stateT = 0;

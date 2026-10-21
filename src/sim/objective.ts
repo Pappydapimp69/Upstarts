@@ -99,8 +99,9 @@ export function objectiveOf(w: World, slot: PlayerSlot = w.players[0]): Objectiv
   for (const s of w.sauros) {
     const dist = Math.hypot(s.x - d.x, s.z - d.z);
     const onYou = s.target === slot.entity && (s.state === 'stalk' || s.state === 'charge');
-    const big = bitesToKill(SAUROSUCHUS.mass, d.body.mass, SAUROSUCHUS.biteMult) <= 3;
-    if (big && (onYou || (dist < OBJ.danger && s.state !== 'rest' && s.state !== 'eat'))) {
+    // Only a danger to what it would hunt; a full-grown Herrerasaurus is its predator (D20).
+    const prey = d.body.mass >= SAUROSUCHUS.minPrey && d.body.mass <= SAUROSUCHUS.mass * SAUROSUCHUS.maxPreyFrac;
+    if (onYou || (prey && dist < OBJ.danger && s.state !== 'rest' && s.state !== 'eat' && s.state !== 'flee')) {
       return { key: 'danger', say: 'Saurosuchus! Get away', sub: onYou ? 'It is hunting you. Sprint away, and break its line of sight in the ferns.' : 'Keep your distance and stay downwind of it.', at: null };
     }
   }
@@ -117,5 +118,6 @@ export function objectiveOf(w: World, slot: PlayerSlot = w.players[0]): Objectiv
     const next = stageOf(Math.min(1, d.growth + 0.001)) === 'hatchling' ? 'a juvenile' : stageOf(d.growth) === 'juvenile' ? 'a sub-adult' : 'an adult';
     return { key: 'grow', say: `Grow into ${next}`, sub: `You grow while fed and watered. Keep both topped up. ${Math.round(d.growth * 100)}% grown.`, at: null };
   }
-  return { key: 'rule', say: 'Rule the valley', sub: 'Fully grown. Take down a Hyperodapedon, or stand your ground against Saurosuchus.', at: null };
+  const big = d.body.mass >= SAUROSUCHUS.mass * SAUROSUCHUS.fearFrac;
+  return { key: 'rule', say: 'Rule the valley', sub: big ? 'Fully grown: even Saurosuchus runs from you now. Hunt it, or take down a Hyperodapedon.' : 'Fully grown. Take down a Hyperodapedon; keep clear of Saurosuchus.', at: null };
 }

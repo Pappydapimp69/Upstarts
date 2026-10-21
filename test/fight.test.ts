@@ -66,10 +66,12 @@ describe('combat', () => {
     expect(maxHp(80)).toBeLessThan(maxHp(350));
     const hatch = bodyOf(HERRERASAURUS, 0).mass;
     expect(biteDamage(hatch, 80)).toBeLessThan(0.05); // a hatchling can't take one down
-    // Saurosuchus out-trades an adult Herrerasaurus.
-    const theirs = biteDamage(SAUROSUCHUS.mass, 350, SAUROSUCHUS.biteMult);
-    const ours = biteDamage(350, SAUROSUCHUS.mass);
-    expect(Math.ceil(1 / theirs)).toBeLessThan(Math.ceil(SAUROSUCHUS.retreatAt > 0 ? (1 - SAUROSUCHUS.retreatAt) / ours : 1 / ours) + 1);
+    // Saurosuchus bites by its weight (D20): near enough even with an adult Herrerasaurus, which bites more often.
+    const theirs = biteDamage(SAUROSUCHUS.mass, 350, SAUROSUCHUS.biteMult, 1);
+    const ours = biteDamage(350, SAUROSUCHUS.mass, 1, SAUROSUCHUS.hide);
+    expect(SAUROSUCHUS.biteMult).toBe(1);
+    expect(theirs).toBeLessThan(0.4);
+    expect(ours / 0.8).toBeGreaterThan(theirs / SAUROSUCHUS.biteEvery); // more damage per second
   });
 });
 
@@ -115,38 +117,37 @@ describe('Saurosuchus', () => {
     expect(w.lastDeath?.cause).toBe('Saurosuchus');
   });
 
-  it('an adult Herrerasaurus that reacts in time outruns it, and it gives up', () => {
+  it('a full-grown Herrerasaurus is not prey: it is never hunted, and the Saurosuchus backs off from one (D20)', () => {
     const w = arena(1, 30);
     const s = w.sauros[0];
-    // Two bites kill an adult now, so standing still until it's at 3 m is fatal by design.
-    // The player sees it creeping in and sprints away once it's within 12 m.
-    let fled = false, gaveUp = false;
-    secs(w, 60, () => {
-      if (Math.hypot(s.x - w.player.x, s.z - w.player.z) < 12) fled = true;
-      if (fled && s.state === 'rest') gaveUp = true;
-      return fled ? { moveX: 0, moveZ: -1, sprint: 1 } : idle;
+    let hunted = false, fled = false;
+    secs(w, 20, () => {
+      if (s.state === 'stalk' || s.state === 'charge') hunted = true;
+      return idle;
+    });
+    expect(hunted).toBe(false);
+    // Walk straight at it.
+    secs(w, 20, () => {
+      if (s.state === 'flee') fled = true;
+      return { moveX: s.x - w.player.x, moveZ: s.z - w.player.z, sprint: 0 };
     });
     expect(fled).toBe(true);
-    expect(w.player.alive).toBe(true);
     expect(w.player.needs.health).toBe(1);
-    expect(gaveUp || s.state === 'stalk' || s.state === 'patrol').toBe(true);
     expect(catchRadius(7.4)).toBeLessThan(catchRadius(4.8));
   });
 
-  it('an adult Herrerasaurus that fights it head on pays for it, win or lose', () => {
+  it('a full-grown Herrerasaurus wins a straight fight with it (D20)', () => {
     const w = arena(1, 6);
     secs(w, 40, (ww) => {
       const p = ww.player, t = ww.sauros[0];
       ww.player.needs.hunger = 1;
       ww.player.needs.thirst = 1;
-      ww.player.stamina = 1;
-      return t ? { moveX: (t.x - p.x) * 0.01, moveZ: (t.z - p.z) * 0.01, sprint: 0, eat: true } : idle;
+      if (!t) return idle;
+      const d = Math.hypot(t.x - p.x, t.z - p.z);
+      return { moveX: t.x - p.x, moveZ: t.z - p.z, sprint: d > 3 ? 1 : 0, eat: d < 4 };
     });
-    const s = w.sauros[0];
-    // Scaled back to a 385 kg sub-adult it is an even match for a 350 kg adult: the Herrerasaurus can
-    // win, but only badly hurt (the owner's call: no more one-bite kills on anything near its size).
-    expect(!w.player.alive || w.player.needs.health < 0.5).toBe(true);
-    void s;
+    expect(w.player.alive).toBe(true);
+    expect(w.sauros.length === 0 || w.sauros[0].health < 0.35).toBe(true);
   });
 
   it('ambushes a herd from downwind and eats the kill', () => {

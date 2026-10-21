@@ -13,6 +13,11 @@ on GitHub Pages and in the published artifact. When the game proper starts (M0) 
 and a glottal phase per call. Upstream it into `pappydapimp69/sound-engine` before the next re-copy of `src/`,
 or the re-copy will drop it.
 
+`worklet/processors.js` (2026-10-21, owner: audio is static on mobile): a source sleeps once its generator has been
+silent for longer than its delay line holds, outputting zeros until its next trigger, and the reverb sleeps once its
+input and tail are silent. Every source used to run its full DSP every sample, idle or not, which overran the audio
+thread on phones. Output is unchanged (checked against the old file on an offline render). Upstream this too.
+
 ## Upstarts copy
 
 Upstarts serves this folder as static files from `public/sound-engine/` (copied from the Dlist demo's vendor folder,
