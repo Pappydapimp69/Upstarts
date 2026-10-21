@@ -106,7 +106,7 @@ or insects as ambient life.
   punishes death harder. Growth time and death rules must be decided together.
 - Small species grow up faster than big ones.
 
-### Death — PROPOSED, YOUR CALL
+### Death — LOCKED (D10)
 - Death is permanent for that creature. You respawn as a new hatchling.
 - What carries over: species unlocks, skin/color variants, and stats like
   longest life and kills.
@@ -125,7 +125,9 @@ or insects as ambient life.
   ratio matters a lot. Grab or pin comes later.
 
 ### World cycles
-- Day/night cycle (~30–60 min per day, tunable). Night is dark and dangerous.
+- Day/night cycle: **one real hour per day (D11).** The sun spends 40 of those minutes
+  within ±15° of its highest point; dawn, dusk and night share the other 20. Night is dark
+  and dangerous.
 - Wet/dry season cycle over several in-game days.
 - Weather: rain, fog, ashfall.
 
@@ -400,9 +402,9 @@ time on art (M5).**
 
 1. Survival stats: is the proposed set in §4 right?
 2. Growth time: about 2–3 hours to adult, or longer like *The Isle*?
-3. Death: permadeath plus kept unlocks, as proposed?
+3. ~~Death~~ Decided: permanent (D10). Still open: what carries over to the next hatchling.
 4. Map: start at 2 × 2 km, as proposed?
-5. Day length: 30 min, 60 min, or something else?
+5. ~~Day length~~ Decided: 60 min, 40 of them near midday (D11).
 6. Camera: third-person only, or a first-person option too?
 7. Nesting and family play (*The Isle*-style): in scope later, or never?
 8. ~~Real name for the game.~~ Decided: **Upstarts** (D9).
@@ -422,6 +424,8 @@ time on art (M5).**
 | D7 | Solo play runs the sim in a Web Worker | PROPOSED |
 | D8 | Fully procedural sound engine. No recorded or designed audio. | LOCKED |
 | D9 | Game name: **Upstarts**. The full game lives in its own repo, `upstarts`. Dlist stays the shareable demo and tutorial. | LOCKED |
+| D10 | Death is permanent for that creature. You respawn as a new hatchling. | LOCKED |
+| D11 | A day is 60 real minutes. The sun is within ±15° of its highest point for 40 of them. | LOCKED |
 
 ---
 
