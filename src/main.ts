@@ -28,6 +28,11 @@ import { initInput, readInput } from './input/input';
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
 const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
+// Testing (the owner's call): growth runs 101x (+10000%), so a Herrerasaurus is adult in about 90 s of
+// fed play. ?realgrowth turns it off.
+const TEST_GROWTH = params.has('realgrowth') ? 1 : 101;
+world.growScale = TEST_GROWTH;
+document.getElementById('growChip')!.hidden = TEST_GROWTH === 1;
 const ui = new Ui();
 if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
 const view = new SceneView(document.body);

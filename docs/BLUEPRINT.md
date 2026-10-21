@@ -439,6 +439,7 @@ time on art (M5).**
 | D15 | Hit points come from the body: max HP scales with mass^(2/3) (size and weight), 100 HP for an adult Herrerasaurus; bite damage in HP scales the same way with the attacker, times bite strength, divided by the defender's armor. Bigger animals have more HP. | LOCKED |
 | D16 | Playable now: Herrerasaurus, Sanjuansaurus, Eodromaeus, Panphagia, chosen at each hatch. Sanjuansaurus is pulled forward from the later candidates as the mid-size option. | LOCKED |
 | D17 | Per-bite cap on the defender's max HP, gated by mass ratio r: 40% up to r = 3, rising on a log scale to 100% at r = 8, uniform for every bite (ZaneGPT review, Brain sandbox-power-scaling E2). Saurosuchus kills an adult Herrerasaurus in 3 bites, a sub-adult in 2, a juvenile in 1. | LOCKED |
+| D18 | Saurosuchus ignores small targets (under 25 kg), even close by: they aren't worth the trouble (owner). Its size is scaled back to the measured 4.1 m / 385 kg sub-adults (owner: "scaled back"; Brain dlist/E98): 2 bites on a half-grown Herrerasaurus, 3 on a three-quarter-grown or adult one, and an adult can win head-on but only badly hurt. | LOCKED |
 
 ---
 

@@ -165,9 +165,8 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
         // Pick the best quarry it can sense: the most meat for the distance, within limits.
         let best: Quarry | null = null, bestScore = 0;
         for (const k of w.quarry) {
-          // Small fry isn't worth a hunt, but it snaps at anything that wanders close.
-          const near = Math.hypot(k.x - s.x, k.z - s.z) < 10;
-          if ((k.mass < S.minPrey && !(near && k.mass >= 2)) || k.mass > S.mass * S.maxPreyFrac) continue;
+          // Small targets aren't worth the trouble (the owner's call, D18): not even one that wanders close.
+          if (k.mass < S.minPrey || k.mass > S.mass * S.maxPreyFrac) continue;
           if (!sensesQuarry(s, k, w.heard)) continue;
           if (Math.hypot(k.x - s.homeX, k.z - s.homeZ) > S.territory + 20) continue;
           const score = k.mass / (10 + Math.hypot(k.x - s.x, k.z - s.z));

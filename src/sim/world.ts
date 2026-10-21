@@ -98,6 +98,7 @@ export interface World {
   carcasses: Carcass[];
   nextId: number;
   needScale: number; // 1 = real time; tests and ?fast speed it up
+  growScale: number; // extra multiplier on growth only (the owner's testing setting); 1 = real time
   herds: Herd[];
   herbivores: Herbivore[];
   sauros: Sauro[];
@@ -114,7 +115,7 @@ export interface World {
 export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus', eggs = false): World {
   const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37) };
   const w = {
-    tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale,
+    tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale, growScale: 1,
     herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs,
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
@@ -517,7 +518,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     }
     // Grows only while fed and watered.
     if (d.growth < 1 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove) {
-      d.growth = Math.min(1, d.growth + (dt * w.needScale) / d.species.toAdult);
+      d.growth = Math.min(1, d.growth + (dt * w.needScale * w.growScale) / d.species.toAdult);
       d.body = bodyOf(d.species, d.growth);
     }
   }

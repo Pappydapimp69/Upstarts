@@ -74,8 +74,8 @@ describe('combat', () => {
 });
 
 describe('Saurosuchus', () => {
-  it('a hatchling isn\'t worth a hunt from afar, but it snaps at one close by', () => {
-    for (const [gap, expectHunt] of [[20, false], [6, true]] as const) {
+  it('a hatchling isn\'t worth the trouble, far or close (D18)', () => {
+    for (const [gap, expectHunt] of [[20, false], [6, false]] as const) {
       const w = arena(0, gap);
       const s = w.sauros[0];
       let hunted = false;
