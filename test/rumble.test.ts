@@ -1,45 +1,56 @@
 import { describe, expect, it } from 'vitest';
-import { feltRange, footfallRumble } from '../src/render/rumbleMath';
+import { addStep, decay, emptyBed, groundFeel, mixRumble, ownStep } from '../src/render/rumbleMath';
 
-const total = (r: { strong: number; weak: number }): number => r.strong + r.weak;
-
-describe('footfall rumble', () => {
-  it('heavier animals hit harder', () => {
-    const hatch = footfallRumble({ mass: 4, speed: 2, dist: 5, pan: 0 });
-    const adult = footfallRumble({ mass: 350, speed: 2, dist: 5, pan: 0 });
-    const sauro = footfallRumble({ mass: 650, speed: 2, dist: 5, pan: 0 });
-    expect(total(adult)).toBeGreaterThan(total(hatch));
-    expect(total(sauro)).toBeGreaterThan(total(adult));
-    expect(sauro.strong / sauro.weak).toBeGreaterThan(hatch.strong / hatch.weak); // heavier = more low thud
+describe('ground bed (Dlist model)', () => {
+  it('an adult Herrerasaurus walking 2 m away is felt at 0.35', () => {
+    expect(groundFeel(350, 3.4, 2)).toBeCloseTo(0.35, 5);
   });
 
-  it('faster steps hit harder', () => {
-    const walk = footfallRumble({ mass: 350, speed: 1.5, dist: 0, pan: 0 });
-    const sprint = footfallRumble({ mass: 350, speed: 7.4, dist: 0, pan: 0 });
-    expect(total(sprint)).toBeGreaterThan(total(walk) * 1.5);
+  it('heavier and faster animals are felt more', () => {
+    expect(groundFeel(650, 3, 10)).toBeGreaterThan(groundFeel(80, 3, 10));
+    expect(groundFeel(80, 4.8, 10)).toBeGreaterThan(groundFeel(80, 1, 10));
   });
 
-  it('fades with distance and is gone past three felt ranges', () => {
-    const near = footfallRumble({ mass: 650, speed: 3, dist: 5, pan: 0 });
-    const far = footfallRumble({ mass: 650, speed: 3, dist: 30, pan: 0 });
-    expect(total(far)).toBeLessThan(total(near));
-    expect(total(footfallRumble({ mass: 650, speed: 3, dist: feltRange(650) * 3.1, pan: 0 }))).toBe(0);
+  it('fades with distance', () => {
+    expect(groundFeel(650, 3, 40)).toBeLessThan(groundFeel(650, 3, 10));
   });
 
-  it('follows the direction of the source', () => {
-    const left = footfallRumble({ mass: 650, speed: 3, dist: 6, pan: -1 });
-    const right = footfallRumble({ mass: 650, speed: 3, dist: 6, pan: 1 });
-    expect(left.left).toBeGreaterThan(0);
-    expect(left.right).toBe(0);
-    expect(right.right).toBeGreaterThan(0);
-    expect(right.left).toBe(0);
-    expect(left.strong).toBeGreaterThan(right.strong); // left body motor leans left
-    expect(right.weak).toBeGreaterThan(left.weak);
+  it('a stampeding herd adds up instead of taking the loudest step', () => {
+    const one = emptyBed(), herd = emptyBed();
+    addStep(one, 80, 4.8, 13, 0);
+    for (let i = 0; i < 7; i++) addStep(herd, 80, 4.8, 13, 0);
+    expect(mixRumble(herd, []).strong).toBeGreaterThan(mixRumble(one, []).strong * 2);
   });
 
-  it('a stalking predator is felt less', () => {
-    const open = footfallRumble({ mass: 650, speed: 0.7, dist: 8, pan: 0 });
-    const stalk = footfallRumble({ mass: 650, speed: 0.7, dist: 8, pan: 0, quiet: 0.3 });
-    expect(total(stalk)).toBeLessThan(total(open) * 0.5);
+  it('dies away in about 0.15 s', () => {
+    const b = emptyBed();
+    addStep(b, 650, 3, 5, 0);
+    const g0 = Math.sqrt(b.g2);
+    decay(b, 0.15);
+    expect(Math.sqrt(b.g2) / g0).toBeCloseTo(Math.exp(-0.5), 3);
+  });
+
+  it('keeps the direction for the triggers', () => {
+    const b = emptyBed();
+    addStep(b, 650, 3, 6, -1);
+    const r = mixRumble(b, []);
+    expect(r.left).toBeGreaterThan(0);
+    expect(r.right).toBe(0);
+  });
+});
+
+describe('own footsteps', () => {
+  it('never drop below what a motor can feel', () => {
+    expect(ownStep(4, 0.5, 3.5).weak).toBeGreaterThanOrEqual(0.16);
+  });
+  it('a sprinting adult hits the deep motor harder than a walking hatchling', () => {
+    expect(ownStep(350, 7.4, 7.4).strong).toBeGreaterThan(ownStep(4, 1, 3.5).strong * 3);
+  });
+  it('pulses mix with the bed in power', () => {
+    const b = emptyBed();
+    addStep(b, 650, 3, 5, 0);
+    const p = ownStep(350, 7, 7.4);
+    const r = mixRumble(b, [p]);
+    expect(r.strong).toBeGreaterThan(Math.max(Math.sqrt(b.g2), p.strong));
   });
 });

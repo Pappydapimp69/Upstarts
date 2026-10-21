@@ -39,6 +39,7 @@ export interface Herbivore {
   threatX: number; // last place it sensed the predator
   threatZ: number;
   alarmAt: number; // world time (s) of the freshest sighting it knows of, its own or a neighbour's
+  startleAt: number; // world time it heard a call loud enough to bolt (kept apart from alarmAt, which neighbours copy)
   bleeding: number; // s of bleeding left
   aim: number; // yaw it's drifting toward while grazing
 }
@@ -129,7 +130,7 @@ export function stepHerbivore(h: Herbivore, herd: Herd, all: Herbivore[], preds:
   const calmT = now - h.alarmAt;
   // State changes, with hysteresis: it takes a while to calm down.
   if (h.state !== 'flee') {
-    if (h.bleeding > 0 || (sensed && threatD < PANIC) || fleeingNear >= QUORUM || (h.state === 'alert' && sensed && h.stateT > 1.2)) {
+    if (h.bleeding > 0 || (sensed && threatD < PANIC) || fleeingNear >= QUORUM || (h.state === 'alert' && sensed && h.stateT > 1.2) || now - h.startleAt < 0.2) {
       h.state = 'flee';
       h.stateT = 0;
     } else if (sensed && h.state !== 'alert') {

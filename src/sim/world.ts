@@ -12,6 +12,7 @@ import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './
 import { biteDamage } from './combat';
 import { bodyOf, GROWTH } from './growth';
 import type { SoundEvent } from './events';
+import { CALLS, callLevel, heardAt, HERD_HEARS, roarStyle, SAURO_HEARS } from './calls';
 
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
@@ -122,7 +123,7 @@ function pickGoal(w: World, herd: Herd): void {
 function addHerbivore(w: World, herd: Herd, x: number, z: number): void {
   w.herbivores.push({
     id: w.nextId++, herd: herd.id, x, z, yaw: w.rand() * Math.PI * 2, speed: 0, health: 1, stamina: 1,
-    state: 'graze', stateT: w.rand() * 6, threatX: 0, threatZ: 0, alarmAt: -99, bleeding: 0, aim: w.rand() * Math.PI * 2,
+    state: 'graze', stateT: w.rand() * 6, threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: w.rand() * Math.PI * 2,
   });
 }
 
@@ -318,6 +319,35 @@ export function step(w: World, cmd: Command): void {
     stepNeeds(n, isSprinting(d, cmd), dt, w.needScale);
     d.age += dt;
     d.hitT += dt;
+    d.callT += dt;
+    // Calls: one at a time. Loud ones startle the herds that hear them, and draw a hungry Saurosuchus.
+    if (cmd.call && d.callT >= d.callDur) {
+      const style = cmd.call === 'auto' ? roarStyle(d.stamina, n.thirst, n.hunger) : cmd.call;
+      const c = CALLS[style];
+      d.callT = 0;
+      d.callDur = c.duration + (c.notes && c.notes > 1 ? (c.gap ?? 0.3) * (c.notes - 1) : 0);
+      const level = callLevel(style, d.body.mass);
+      w.events.push({ kind: 'call', who: 'player', call: style, ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.9 * d.body.hip), level });
+      const now = w.tick * TICK_DT;
+      for (const h of w.herbivores) {
+        if (d.body.mass >= HYPERODAPEDON.ignoreBelow && heardAt(level, Math.hypot(h.x - d.x, h.z - d.z)) >= HERD_HEARS) {
+          h.threatX = d.x;
+          h.threatZ = d.z;
+          h.alarmAt = now;
+          h.startleAt = now;
+        }
+      }
+      for (const s of w.sauros) {
+        if (s.state === 'patrol' || s.state === 'rest') {
+          if (heardAt(level, Math.hypot(s.x - d.x, s.z - d.z)) >= SAURO_HEARS) {
+            s.wanderX = d.x;
+            s.wanderZ = d.z;
+            s.state = 'patrol';
+            s.stateT = 0;
+          }
+        }
+      }
+    }
     // Grows only while fed and watered.
     if (d.growth < 1 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove) {
       d.growth = Math.min(1, d.growth + (dt * w.needScale) / GROWTH.toAdult);

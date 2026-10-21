@@ -51,6 +51,7 @@ export class FollowCamera {
       drink: inp.drink,
       eat: inp.eat,
       respawn: inp.confirm,
+      call: inp.call ?? undefined,
     };
   }
 

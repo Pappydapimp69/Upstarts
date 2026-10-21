@@ -102,6 +102,18 @@
       .card button:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
       .hint { margin: 0; color: var(--ink-3); font-size: 0.78rem; }
 
+      /* Call wheel: click the right stick (or hold R, or hold Y on touch), then point at a call. */
+      .wheel { position: fixed; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; pointer-events: none;
+        background: radial-gradient(circle, rgba(17, 13, 10, 0.78) 0 34%, rgba(17, 13, 10, 0.55) 35% 100%); border: 1px solid var(--line);
+        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+      .wheel .opt { position: absolute; left: 50%; top: 50%; width: 92px; margin: -22px 0 0 -46px; text-align: center; display: grid; gap: 2px;
+        padding: 6px 4px; border-radius: 6px; border: 1px solid transparent; color: var(--ink-2); font-size: 0.86rem; }
+      .wheel .opt small { font-size: 0.6rem; color: var(--ink-3); letter-spacing: 0.04em; }
+      .wheel .opt.on { color: var(--ink); border-color: rgba(212, 155, 83, 0.7); background: rgba(212, 155, 83, 0.16); }
+      .wheel .mid { position: absolute; left: 50%; top: 50%; width: 120px; margin-left: -60px; transform: translateY(-50%); text-align: center; display: grid; gap: 3px; }
+      .wheel .mid b { font-family: var(--f-display); font-style: italic; font-weight: 500; font-size: 1.15rem; }
+      .wheel .mid span { font-size: 0.66rem; color: var(--ink-3); }
+
       /* Touch: floating stick on the left, camera drag on the right, Xbox-style face buttons bottom right. */
       #touch { position: fixed; inset: 0; display: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
       body.touch.playing #touch { display: block; }
@@ -128,6 +140,7 @@
       .tbtn[data-b="a"] { left: 63px; bottom: 0; border-color: #6cbf5a; }
       .tbtn[data-b="b"] { right: 0; top: 63px; border-color: #d9534f; }
       .tbtn[data-b="x"] { left: 0; top: 63px; border-color: #4a90d9; }
+      .tbtn[data-b="y"] { left: 63px; top: 0; border-color: #e5c34a; }
       .tbtn.small { width: 46px; height: 46px; font-size: 1rem; }
       .tbtn[data-b="menu"] { right: 0; top: -58px; }
       .tbtn[data-b="cam"] { right: 56px; top: -58px; }
@@ -157,6 +170,7 @@
       <div class="row pace"><span class="lab">Pace</span><span class="val" id="pace">Standing</span></div>
     </section>
 
+    <div class="wheel" id="callWheel" hidden aria-live="polite"><div class="mid"><b id="wheelName">Roar</b><span id="wheelHint">Y: roar</span></div></div>
     <div class="prompt" id="prompt"></div>
     <svg id="scent" viewBox="0 0 24 24" hidden aria-hidden="true"><path d="M12 2 L20 20 L12 15 L4 20 Z" fill="currentColor"/></svg>
 
@@ -167,6 +181,7 @@
       <div class="tbtns">
         <button type="button" class="tbtn small" data-b="cam" aria-label="Camera behind">&#8634;</button>
         <button type="button" class="tbtn small" data-b="menu" aria-label="Menu">&#9776;</button>
+        <button type="button" class="tbtn" data-b="y">Y<small>Roar</small></button>
         <button type="button" class="tbtn" data-b="x">X<small>Eat / bite</small></button>
         <button type="button" class="tbtn" data-b="b">B<small>Drink</small></button>
         <button type="button" class="tbtn" data-b="a">A<small>Hatch</small></button>

@@ -26,7 +26,7 @@ function oneHerd(px: number, pz: number): World {
 const fleeing = (w: World): number => w.herbivores.filter((h) => h.state === 'flee').length;
 const herbAt = (x: number, z: number, yaw = 0): Herbivore => ({
   id: 1, herd: 0, x, z, yaw, speed: 0, health: 1, stamina: 1, state: 'graze', stateT: 0,
-  threatX: 0, threatZ: 0, alarmAt: -99, bleeding: 0, aim: 0,
+  threatX: 0, threatZ: 0, alarmAt: -99, startleAt: -99, bleeding: 0, aim: 0,
 });
 
 describe('scent', () => {

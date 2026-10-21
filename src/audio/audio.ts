@@ -5,6 +5,7 @@
 import { rng } from '../sim/rng';
 import { lerp } from '../sim/math';
 import type { SoundEvent } from '../sim/events';
+import { CALLS, type CallStyle } from '../sim/calls';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Src = any;
@@ -188,14 +189,31 @@ export class AudioLayer {
         } else if (ev.call === 'growl') {
           this.at(S.sauro, ev);
           S.sauro.call({ mode: 'open', duration: 0.9 * (0.9 + 0.2 * audioRng()), roughness: 0.95, breath: 0.25, jitter: 0.6, amp: 2.2 });
-        } else if (ev.call === 'yelp') {
-          // Pitch scales with the tract: the highest clean open-mouth pitch is 0.3 F1 (Brain: dlist E8).
-          const cap = (0.3 * 343) / (4 * tract);
-          this.at(S.voice, ev);
-          S.voice.call({ mode: 'open', duration: 0.3, f0: cap, f0End: cap * 0.7, roughness: 0.6, breath: 0.4, jitter: 0.8, amp: 2 });
+        } else if (ev.call && ev.call in CALLS) {
+          this.playerCall(ev.call as CallStyle, ev, tract);
         }
         break;
       }
+    }
+  }
+
+  // A call from the table (Dlist demo). Pitch is a fraction of the tract's highest clean open-mouth pitch
+  // (0.3 F1, Brain: dlist E8), so it scales from adult to hatchling. No two calls on exactly the same pitch.
+  private playerCall(style: CallStyle, ev: SoundEvent, tract: number): void {
+    const S = this.S, c = CALLS[style];
+    this.at(S.voice, ev);
+    const vp = c.f0abs ? 1 : 0.94 + 0.12 * audioRng();
+    const cap = (0.3 * 343) / (4 * tract);
+    const f0 = c.f0abs ?? (c.f0k ? cap * c.f0k * vp : undefined);
+    const o: Record<string, unknown> = { mode: c.mode, duration: c.duration * (0.92 + 0.16 * audioRng()), roughness: c.roughness ?? 0.3,
+      amp: c.amp, breath: c.breath ?? 0.15, jitter: c.jitter ?? 0.2,
+      ...(f0 ? { f0, f0End: c.f0abs ?? (c.f0Endk ? cap * c.f0Endk * vp : f0 * 0.75) } : {}) };
+    S.voice.call(o);
+    // Animals repeat a note a little lower and never on an exact beat; a fixed +12% second note read as a cartoon.
+    if ((c.notes ?? 1) > 1) {
+      const k = 0.88 + 0.1 * audioRng();
+      this.later.push({ at: this.ctx!.currentTime + (c.gap ?? 0.3) * (0.8 + 0.4 * audioRng()), run: () => S.voice.call({ ...o,
+        duration: (o.duration as number) * (0.8 + 0.3 * audioRng()), ...(f0 ? { f0: (o.f0 as number) * k, f0End: (o.f0End as number) * k } : {}) }) });
     }
   }
 

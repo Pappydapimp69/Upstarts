@@ -32,11 +32,11 @@ const ADULT_LENGTH = 5.2; // m nose to tail
 
 const KEYS: Record<Device, [string, string][]> = {
   pad: [['Move', 'Left stick'], ['Camera', 'Right stick'], ['Sprint', 'Right trigger (hold)'], ['Drink / sniff', 'B (hold)'],
-    ['Eat / bite', 'X (hold)'], ['Camera behind', 'Click right stick'], ['Menu', 'Start']],
+    ['Eat / bite', 'X (hold)'], ['Roar', 'Y'], ['Calls', 'Click right stick'], ['Camera behind', 'Click left stick'], ['Menu', 'Start']],
   keys: [['Move', 'W A S D'], ['Camera', 'Drag the mouse'], ['Sprint', 'Shift (hold)'], ['Drink / sniff', 'G (hold)'],
-    ['Eat / bite', 'E or F (hold)'], ['Camera behind', 'C'], ['Menu', 'Esc']],
+    ['Eat / bite', 'E or F (hold)'], ['Roar', 'R'], ['Calls', 'Hold R, or 1 to 6'], ['Camera behind', 'C'], ['Menu', 'Esc']],
   touch: [['Move', 'Left thumb (push to the edge to sprint)'], ['Camera', 'Drag on the right'], ['Drink / sniff', 'B (hold)'],
-    ['Eat / bite', 'X (hold)'], ['Camera behind', '↺'], ['Menu', '☰']],
+    ['Eat / bite', 'X (hold)'], ['Roar', 'Y'], ['Calls', 'Hold Y'], ['Camera behind', '\u21BA'], ['Menu', '\u2630']],
 };
 const BTN: Record<Device, { drink: string; eat: string; go: string }> = {
   pad: { drink: 'B', eat: 'X', go: 'A' },
@@ -71,7 +71,7 @@ export class Ui {
     this.el('keysList').innerHTML = KEYS[d].map(([a, b]) => `<div style="display:contents"><dt>${a}</dt><dd>${b}</dd></div>`).join('');
     const go = BTN[d].go;
     this.el('deathCta').textContent = d === 'touch' ? 'Tap to hatch again' : `Press ${go} to hatch again`;
-    this.el('pauseHint').textContent = d === 'touch' ? 'Tap to resume' : d === 'pad' ? 'X toggles rumble · Start or A to resume' : 'R toggles rumble · Esc or Enter to resume';
+    this.el('pauseHint').textContent = d === 'touch' ? 'Tap to resume' : d === 'pad' ? 'X toggles rumble · Start or A to resume' : 'V toggles rumble · Esc or Enter to resume';
   }
 
   showIntro(on: boolean): void {

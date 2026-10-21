@@ -3,7 +3,7 @@ import { lerp, wrapAngle } from './sim/math';
 import { heightAt, waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
-import { isSprinting } from './sim/dino';
+import { isSprinting, type Command } from './sim/dino';
 import { FollowCamera } from './render/camera';
 import { CarcassMeshes } from './render/worldMeshes';
 import { Ui } from './render/ui';
@@ -14,7 +14,8 @@ import { AudioLayer, tractOf, type Surface } from './audio/audio';
 import { clamp } from './sim/math';
 import { HYPERODAPEDON } from './sim/herbivore';
 import { SAUROSUCHUS } from './sim/saurosuchus';
-import { state as inputState } from './input/input';
+import { setPlaying, setRoarLabel, state as inputState } from './input/input';
+import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
@@ -57,13 +58,13 @@ const panOf = (x: number, z: number): number => {
   return (dx * Math.cos(cam.yaw) - dz * Math.sin(cam.yaw)) / d; // camera right is (cos yaw, -sin yaw)
 };
 herrera.onStep = (foot: { x: number; y: number; z: number }) => {
-  rumble.step({ mass: p.body.mass, speed: p.speed, dist: 0, pan: Math.sign(panOf(foot.x, foot.z)) * 0.6 });
+  rumble.own(p.body.mass, p.speed, p.body.sprintMax, performance.now(), inputState.device === 'touch');
   // Your own small feet are close-miked: a hatchling's steps are physically almost silent. Only the mix.
   audio.step('player', foot, p.body.mass, p.speed, surfaceAt(foot.x, foot.z), clamp((350 / p.body.mass) ** 0.3, 1, 3.5));
 };
 herrera.onSound = (kind: 'lap' | 'drip' | 'gulp' | 'sniff' | 'tear' | 'thud', at: { x: number; y: number; z: number }) => audio.body(kind, at, p.body.mass);
 const feel = (who: 'prey' | 'saurosuchus', mass: number) => (x: number, z: number, speed: number, quiet: number): void => {
-  rumble.step({ mass, speed, dist: Math.hypot(x - p.x, z - p.z), pan: panOf(x, z), quiet });
+  rumble.step(mass, speed, Math.hypot(x - p.x, z - p.z), panOf(x, z), quiet, performance.now(), inputState.device === 'touch');
   audio.step(who, { x, y: heightAt(x, z), z }, mass * quiet * quiet, speed, surfaceAt(x, z));
 };
 herbMeshes.onStep = feel('prey', HYPERODAPEDON.mass);
@@ -73,6 +74,8 @@ ui.setRumble(rumble.enabled);
 ui.onRumbleButton(() => ui.setRumble(rumble.toggle()));
 // The game waits on the splash until the player hatches; the menu button pauses it.
 let started = false, paused = false;
+// One-shot presses wait for the next sim tick: at a high frame rate some frames run no tick at all.
+let pendingCall: Command['call'], pendingRespawn = false;
 ui.showIntro(true);
 
 // Fixed-step sim, free-running render, interpolated between the last two ticks.
@@ -118,14 +121,28 @@ function frame(now: number): void {
     ui.showPause(true);
   }
   const live = started && !paused;
-  const cmd = cam.command(live ? inp : { ...inp, moveF: 0, moveR: 0, sprint: 0, drink: false, eat: false, confirm: false });
+  setPlaying(live && p.alive);
+  setRoarLabel(CALLS[roarStyle(p.stamina, p.needs.thirst, p.needs.hunger)].label);
+  const cmd = cam.command(live ? inp : { ...inp, moveF: 0, moveR: 0, sprint: 0, drink: false, eat: false, confirm: false, call: null });
+  if (cmd.call) pendingCall = cmd.call;
+  if (cmd.respawn) pendingRespawn = true;
   while (acc >= TICK_DT) {
     prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
+    cmd.call = pendingCall;
+    cmd.respawn = pendingRespawn;
+    pendingCall = undefined;
+    pendingRespawn = false;
     herbMeshes.beforeTick(world.herbivores);
     sauroMeshes.beforeTick(world.sauros);
     step(world, cmd);
-    for (const ev of world.events) audio.play(ev, tract());
+    for (const ev of world.events) {
+      audio.play(ev, tract());
+      // Haptic jolts: your bite landing, and being bitten (harder, longer).
+      if (ev.kind === 'hit' && ev.who === 'player') rumble.hit(0.45, 0.7, 90, performance.now(), inputState.device === 'touch');
+      if (ev.kind === 'hit' && ev.who !== 'player' && Math.hypot(ev.x - p.x, ev.z - p.z) < 1.5) rumble.hit(0.7, 1, 180, performance.now(), inputState.device === 'touch');
+    }
     cmd.respawn = false; // a press acts once, not once per tick
+    cmd.call = undefined;
     acc -= TICK_DT;
     if (world.player !== p) {
       // Hatched again: fresh body, camera behind it.
@@ -160,7 +177,7 @@ function frame(now: number): void {
   view.render(dt);
   const near = nearby();
   ui.update(world, near, cam.yaw);
-  rumble.flush(now, live && p.alive && inputState.device === 'pad');
+  rumble.flush(now, dt, live && p.alive && inputState.device === 'pad');
   {
     const s0 = world.sauros[0];
     const snout = herrera.snout();

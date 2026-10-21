@@ -3,6 +3,7 @@ import { gradeAlong, heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terr
 import { fullNeeds, type Needs } from './needs';
 import { bodyOf, type Body } from './growth';
 import { pushOutOfTrees } from './flora';
+import type { CallStyle } from './calls';
 import type { Species } from './species';
 
 // What a player (or AI, or remote client) asks for this tick. World-space, so the
@@ -14,6 +15,7 @@ export interface Command {
   drink?: boolean; // held: drinks in reach of water, sniffs the air otherwise
   eat?: boolean; // held: bites live prey in front, eats a carcass otherwise
   respawn?: boolean; // pressed, only read while dead
+  call?: CallStyle | 'auto'; // pressed: a call from the wheel, or 'auto' for Y's condition roar
 }
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
@@ -39,13 +41,15 @@ export interface Dino {
   age: number; // s alive
   biteT: number; // s since the last bite
   hitT: number; // s since it was last bitten
+  callT: number; // s since its last call started
+  callDur: number; // length of that call, s
   sniff: { yaw: number; strength: number } | null; // strongest scent while sniffing
 }
 
 export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
     species, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, sniff: null,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, sniff: null,
   };
 }
 

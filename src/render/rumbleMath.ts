@@ -1,48 +1,77 @@
 import { clamp, smooth } from '../sim/math';
 
-// Controller rumble from a footfall. Pure math so it can be tested without a gamepad.
-//  - Weight: heavier animals hit harder and are felt further away.
-//  - Speed: a sprint lands harder than a walk.
-//  - Direction: a step to the left drives the left side (left motor / left trigger), one to the
-//    right the right side; straight ahead or behind drives both.
-export interface Footfall {
-  mass: number; // kg
-  speed: number; // m/s
-  dist: number; // m from the player (0 for its own feet)
-  pan: number; // -1 left .. 1 right, relative to the camera
-  quiet?: number; // multiplier for a deliberately soft step (stalking), default 1
+// Controller haptics, ported from the Dlist demo. Pure math so it can be tested without a gamepad.
+//
+// Ground bed: every footfall nearby adds energy, so many animals add up into one rumble (a herd stampeding
+// past) and it dies away in about 0.15 s. Ground (Rayleigh) waves spread as 1/sqrt(r) and soil damps them
+// about 2% per metre; low frequency, so the bed goes mostly to the heavy motor. Felt amplitude 0.35 is an
+// adult Herrerasaurus walking step 2 m away. Direction: the bed also keeps a left and a right share (from
+// where each step is relative to the camera) for the triggers.
+//
+// Own feet: a tap on every footfall. Controller motors barely register below about 0.15, so even a
+// hatchling's light step stays above that; weight and speed add the deep motor.
+
+export const BED_TAU = 0.15; // s
+
+export function groundFeel(mass: number, speed: number, dist: number): number {
+  const r = Math.max(2, dist), e = (mass * speed * speed) / (350 * 3.4 * 3.4);
+  return 0.35 * Math.sqrt(e) * Math.sqrt(2 / r) * Math.exp(-0.02 * (r - 2));
+}
+
+export interface Pulse {
+  weak: number;
+  strong: number;
+}
+
+// The player's own footfall. intensity 0..1 grows with weight and speed.
+export function ownStep(mass: number, speed: number, topSpeed: number): Pulse {
+  const intensity = clamp(Math.pow(mass / 350, 0.25) * (0.3 + 0.7 * smooth(0, topSpeed, speed)), 0, 1);
+  const run = speed > 0.6 * topSpeed ? 1 : 0.35;
+  return { weak: Math.max(0.16, 0.14 + 0.2 * intensity), strong: (0.04 + 0.24 * intensity) * run };
+}
+
+export interface Bed {
+  g2: number; // energy, all directions
+  l2: number; // energy from the left
+  r2: number; // energy from the right
+}
+
+export const emptyBed = (): Bed => ({ g2: 0, l2: 0, r2: 0 });
+
+export function decay(b: Bed, dt: number): void {
+  const k = Math.exp(-dt / BED_TAU);
+  b.g2 *= k;
+  b.l2 *= k;
+  b.r2 *= k;
+}
+
+// pan: -1 left .. 1 right, relative to the camera. quiet scales the step (a stalking predator steps softly).
+export function addStep(b: Bed, mass: number, speed: number, dist: number, pan: number, quiet = 1): void {
+  const a = groundFeel(mass, speed, dist) * quiet, e = a * a;
+  b.g2 += e;
+  b.l2 += e * Math.max(0, -pan);
+  b.r2 += e * Math.max(0, pan);
 }
 
 export interface Rumble {
-  strong: number; // low-frequency (left, heavy) motor, 0..1
-  weak: number; // high-frequency (right, light) motor, 0..1
-  left: number; // left trigger, 0..1
+  strong: number; // low-frequency (heavy) motor
+  weak: number; // high-frequency (light) motor
+  left: number; // left trigger
   right: number; // right trigger
 }
 
-export const ZERO: Rumble = { strong: 0, weak: 0, left: 0, right: 0 };
-
-// How far a footfall of this mass can be felt, m (an adult Herrerasaurus about 18 m).
-export const feltRange = (mass: number): number => 4 + 14 * Math.sqrt(mass / 350);
-
-export function footfallRumble(f: Footfall): Rumble {
-  const m = Math.max(f.mass, 0.1);
-  const heavy = smooth(5, 650, m); // how much of it is the low thud
-  const R = feltRange(m);
-  if (f.dist > 3 * R) return ZERO;
-  const impact = Math.pow(m / 350, 0.6) * (0.35 + 0.65 * smooth(0, 7, f.speed)) * (f.quiet ?? 1);
-  const fall = 1 / (1 + (f.dist / R) ** 2);
-  const I = clamp(impact * fall * (f.dist === 0 ? 0.55 : 0.8), 0, 1);
-  const p = clamp(f.pan, -1, 1);
+// Mix the bed with the player's live pulses. Everything adds in power, so sources combine.
+export function mixRumble(b: Bed, pulses: Pulse[]): Rumble {
+  const g = Math.min(1, Math.sqrt(b.g2));
+  let w2 = (0.3 * g) ** 2, s2 = g * g;
+  for (const p of pulses) {
+    w2 += p.weak * p.weak;
+    s2 += p.strong * p.strong;
+  }
   return {
-    strong: clamp(I * (0.3 + 0.7 * heavy) * (1 - 0.7 * Math.max(0, p)), 0, 1),
-    weak: clamp(I * (0.25 + 0.45 * smooth(0, 7, f.speed)) * (1 - 0.7 * Math.max(0, -p)), 0, 1),
-    left: clamp(I * Math.max(0, -p) * 1.2, 0, 1),
-    right: clamp(I * Math.max(0, p) * 1.2, 0, 1),
+    strong: Math.min(1, Math.sqrt(s2)),
+    weak: Math.min(1, Math.sqrt(w2)),
+    left: Math.min(1, Math.sqrt(b.l2) * 1.2),
+    right: Math.min(1, Math.sqrt(b.r2) * 1.2),
   };
-}
-
-// Several footfalls in one frame: take the strongest per channel, so a herd doesn't saturate.
-export function mix(a: Rumble, b: Rumble): Rumble {
-  return { strong: Math.max(a.strong, b.strong), weak: Math.max(a.weak, b.weak), left: Math.max(a.left, b.left), right: Math.max(a.right, b.right) };
 }
