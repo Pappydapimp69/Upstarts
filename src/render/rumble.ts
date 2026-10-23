@@ -5,6 +5,9 @@ import { addStep, decay, emptyBed, mixRumble, ownStep, type Pulse } from './rumb
 // (trigger rumble where the pad reports it, else dual rumble), else the older hapticActuators API. A refusal
 // is remembered. On touch, the phone's own motor (Android; iOS browsers have none) gets short pulses.
 const KEY = 'upstarts.rumble';
+// Owner: too much vibration. Everything at 0.6 strength, your own steps at most one per 0.22 s (four legs step
+// twice as often as two), and a phone only feels a heavy, fast step or a big animal close by.
+const GAIN = 0.6, OWN_GAP = 220;
 type Effect = 'dual-rumble' | 'trigger-rumble';
 interface Actuator {
   effects?: Effect[];
@@ -23,6 +26,7 @@ export class FootfallRumble {
   private sentT = 0;
   private on = false;
   private vibT = 0;
+  private ownT = -1e9;
 
   constructor() {
     try {
@@ -44,10 +48,11 @@ export class FootfallRumble {
 
   // Your own footfall.
   own(mass: number, speed: number, topSpeed: number, now: number, touch: boolean): void {
-    if (!this.enabled) return;
+    if (!this.enabled || now - this.ownT < OWN_GAP) return;
+    this.ownT = now;
     const p = ownStep(mass, speed, topSpeed);
     if (touch) {
-      this.buzz(60 * Math.max(p.weak, p.strong), now, 0.2);
+      this.buzz(60 * Math.max(p.weak, p.strong), now, 0.3);
       return;
     }
     this.pulses.push({ ...p, end: now + 60 });
@@ -71,14 +76,14 @@ export class FootfallRumble {
     const before = this.bed.g2;
     addStep(this.bed, mass, speed, dist, pan, quiet);
     const a = Math.sqrt(this.bed.g2 - before);
-    if (touch && a > 0.12) this.buzz(a * 40, now, 0); // a phone feels the big ones
+    if (touch && a > 0.25) this.buzz(a * 40, now, 0); // a phone feels the big ones
   }
 
   private buzz(ms: number, now: number, min: number): void {
     if (!navigator.vibrate || ms <= min * 60 || now - this.vibT < 70) return;
     this.vibT = now;
     try {
-      navigator.vibrate(Math.round(Math.min(Math.max(ms, 6), 40)));
+      navigator.vibrate(Math.round(Math.min(Math.max(ms * GAIN, 6), 25)));
     } catch {
       /* no motor */
     }
@@ -90,6 +95,10 @@ export class FootfallRumble {
     this.pulses = this.pulses.filter((p) => p.end > now);
     if (!this.enabled || !active) return;
     const r = mixRumble(this.bed, this.pulses);
+    r.weak *= GAIN;
+    r.strong *= GAIN;
+    r.left *= GAIN;
+    r.right *= GAIN;
     const live = r.weak + r.strong > 0.03;
     if (!((this.fresh || now - this.sentT > 50) && (live || this.on))) return;
     this.sentT = now;
