@@ -29,7 +29,7 @@ Sound (procedural engine) and footstep rumble are in, ahead of the roadmap.
 ## 2. Contradictions to settle first
 
 These are places where the plans disagree with each other or with the code. Building on top of them
-makes them more expensive later. **Update 2026-10-25:** Upstarts is the game and Dlist the reference; items 2, 4,
+makes them more expensive later. **Update 2026-10-25:** Upstarts is the game and Dlist is frozen reference material (no more Dlist updates); items 2, 4,
 5 and 6 are settled (see Dlist `docs/PORTING.md`, Roles).
 
 1. **Player identity (open tension T3).** The blueprint says "player identity lives in the world state
