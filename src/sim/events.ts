@@ -18,6 +18,7 @@ export interface SoundEvent {
   target?: number; // hit: the entity bitten (PLAYER_ID - slot for players)
   yaw?: number; // bite and hit: the heading of the strike, for knockback and spray
   miss?: boolean; // bite: snapped on air
+  blow?: 'kick' | 'swipe'; // hit: a kick or tail swipe rather than a bite
   dur?: number; // skid: s the foot drags
   mass?: number; // skid, thud, scramble: the body's mass, kg
   surface?: 'water' | 'mud' | 'rock' | 'log' | 'dirt'; // skid, thud, scramble: what it's on

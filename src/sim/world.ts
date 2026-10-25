@@ -11,6 +11,7 @@ import { clamp, lerp, smooth, wrapAngle } from './math';
 import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
+import { layTrails, newTrails, readTrail, type TrailLayer, type Trails } from './trails';
 import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
 import { biteCap, biteDamage } from './combat';
 import { bodyOf, GROWTH } from './growth';
@@ -74,6 +75,23 @@ export const GRIP = { drown: 0.14, struggle: 0.06, edge: 2.5 };
 // Hyperodapedon has a shearing beak and Exaeretodon cynodont teeth; small cynodonts just bolt.
 export const COUNTER = { below: 0.6, chance: 0.45, delay: 0.3, reach: 0.9, mult: 0.6 };
 
+// How each species fights (species.ts attack and defend). Game design, not fossil facts.
+// Herrerasaurus's grab: a bite on something up to half its own weight is held in its hands while the bite is held,
+// as a water ambusher's grip is but without the drowning, so it can't run and the next bites land clean.
+export const GRAB = { frac: 0.5 };
+// Eodromaeus's nip: bites come twice as fast for half the stamina, bleed half as long again, and after a hit it
+// skips back out of reach (m/s, scaled by size).
+export const NIP = { cooldown: 0.5, stamina: 0.5, bleed: 1.5, hop: 2.5 };
+// Defensive strikes at what's behind or beside it: the blow lands `hit` s in, it's over at `dur`. reach from the hips:
+// x hip for a kick, x length for a tail swipe, plus the target's half length. arc: half-angle around straight back
+// (rad), so the sides count but not the front. mult: damage as a bite by its own weight; knock: shove, m/s.
+// A Saurosuchus struck hard enough, or by something big enough, breaks off (deter: chance per unit of mass ratio).
+export const STRIKE = {
+  kick: { hit: 0.18, dur: 0.55, reach: 1.5, arc: 1.9, mult: 0.9, knock: 4.5, stamina: 0.07, cooldown: 0.9 },
+  swipe: { hit: 0.3, dur: 0.85, reach: 0.6, arc: 2.3, mult: 0.6, knock: 6, stamina: 0.09, cooldown: 1.3 },
+  deter: 1.6,
+};
+
 // The opening (the owner's call, "make it more of a game"): a new hatchling comes out of the egg already
 // thirsty and hungry, with no carcasses about, and one small cynodont foraging just past the nest.
 export const START = { needs: 0.6, preyGap: 6 };
@@ -136,6 +154,7 @@ export interface World {
   eggs: boolean; // new hatchlings start inside an egg (the game; tests start hatched)
   knocks: Knock[];
   counters: Counter[];
+  trails: Trails; // scent and blood on the ground
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
@@ -144,7 +163,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale, growScale: 1,
     herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs,
-    knocks: [], counters: [],
+    knocks: [], counters: [], trails: newTrails(),
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -448,7 +467,13 @@ function snapJaws(w: World, slot: PlayerSlot): void {
     : onTarget(d, prey.m.x, prey.m.z, prey.m.yaw, smallLen(prey.m) * 0.45, smallLen(prey.m) * 0.15);
   w.events.push({ kind: 'bite', who: 'player', ...at, level, yaw: d.yaw, miss: !q || undefined });
   if (!prey || !q) return;
-  const mass = d.body.mass, mult = d.species.biteMult;
+  const mass = d.body.mass, mult = d.species.biteMult, nip = d.species.attack === 'nip';
+  const bleedK = nip ? NIP.bleed : 1;
+  // A nipper skips back out of reach after it lands one.
+  if (nip) {
+    const v = NIP.hop * Math.sqrt(d.body.size);
+    w.knocks.push({ id: slot.entity, vx: -Math.sin(d.yaw) * v, vz: -Math.cos(d.yaw) * v });
+  }
   // A wounded animal that can fight back may turn on the biter.
   const maybeCounter = (id: number, health: number): void => {
     if (health > 0 && health < COUNTER.below && !w.counters.some((c) => c.from === id) && w.rng.ai() < COUNTER.chance) {
@@ -461,14 +486,15 @@ function snapJaws(w: World, slot: PlayerSlot): void {
     h.health -= share;
     w.events.push({ kind: 'hit', who: 'player', x: h.x, y: groundY(h.x, h.z) + 0.3, z: h.z, level: 76 + 8 * share, share, left: Math.max(0, h.health), target: h.id, yaw: d.yaw });
     w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: h.x, y: groundY(h.x, h.z) + 0.4, z: h.z, level: 74 });
-    h.bleeding = BITE.bleed;
+    h.bleeding = BITE.bleed * bleedK;
     h.threatX = d.x;
     h.threatZ = d.z;
     h.alarmAt = now;
-    if (d.species.swim > 0 && nearWater(h.x, h.z)) d.grip = h.id;
+    if (holds(d, HYPERODAPEDON.mass, h.x, h.z)) d.grip = h.id;
     else shove(w, h.id, d.yaw, share, mass, HYPERODAPEDON.mass);
     if (h.health <= 0) h.state = 'dead';
-    else if (d.grip !== h.id) maybeCounter(h.id, h.health);
+    // Held in a croc's jaws it can't turn on the biter; pinned in Herrerasaurus's hands, its head is still free.
+    else if (d.grip !== h.id || d.species.attack === 'grab') maybeCounter(h.id, h.health);
   } else if (prey.kind === 'small') {
     const m = prey.m;
     const share = Math.min(biteDamage(mass, m.mass, mult) * q, biteCap(mass, m.mass));
@@ -476,7 +502,7 @@ function snapJaws(w: World, slot: PlayerSlot): void {
     const y = m.kind === 'fish' ? WATER_Y - 0.1 : groundY(m.x, m.z) + smallHip(m);
     w.events.push({ kind: 'hit', who: 'player', x: m.x, y, z: m.z, level: 66 + 10 * Math.log10(m.mass) + 8 * share, share, left: Math.max(0, m.health), target: m.id, yaw: d.yaw });
     w.events.push({ kind: 'call', who: 'prey', call: 'squeak', x: m.x, y, z: m.z, level: 60 + 10 * Math.log10(m.mass) });
-    m.bleeding = BITE.bleed;
+    m.bleeding = BITE.bleed * bleedK;
     m.threatX = d.x;
     m.threatZ = d.z;
     m.alarmAt = now;
@@ -486,7 +512,7 @@ function snapJaws(w: World, slot: PlayerSlot): void {
       else placeCarcassAt(w, m.x, m.z, m.yaw, m.mass * 0.5);
       m.state = 'gone';
       m.stateT = 0;
-    } else if (d.species.swim > 0 && nearWater(m.x, m.z) && m.kind !== 'cynodont') d.grip = m.id;
+    } else if ((m.kind !== 'cynodont' || d.species.attack === 'grab') && holds(d, m.mass, m.x, m.z)) d.grip = m.id;
     else {
       shove(w, m.id, d.yaw, share, mass, m.mass);
       if (m.kind === 'exaeretodon') maybeCounter(m.id, m.health);
@@ -507,6 +533,11 @@ function snapJaws(w: World, slot: PlayerSlot): void {
     }
   }
 }
+
+// Does a bite hold on? A water ambusher's grip, on something at the water's edge; Herrerasaurus's grab, on something
+// it outweighs enough to hold down.
+const holds = (d: Dino, victim: number, x: number, z: number): boolean =>
+  (d.species.attack === 'grip' && nearWater(x, z)) || (d.species.attack === 'grab' && victim <= GRAB.frac * d.body.mass);
 
 // Within reach of the water (deep enough to drag something into).
 const nearWater = (x: number, z: number): boolean => {
@@ -538,7 +569,8 @@ function stepGrips(w: World, cmds: Record<number, Command>, dt: number): void {
     prey.z = at.z;
     prey.speed = 0;
     d.stamina = Math.max(0, d.stamina - GRIP.struggle * dt * Math.min(2, (h ? HYPERODAPEDON.mass : m!.mass) / d.body.mass));
-    if (waterDepthAt(prey.x, prey.z) > hip) {
+    // Only a water ambusher drowns what it holds; a grab just pins it for the next bite.
+    if (d.species.attack === 'grip' && waterDepthAt(prey.x, prey.z) > hip) {
       prey.health -= GRIP.drown * dt;
       prey.bleeding = BITE.bleed;
       if (prey.health <= 0) {
@@ -610,6 +642,80 @@ function stepKnocks(w: World, dt: number): void {
 
 // How much a player's armour cuts a bite: its hide, and an armoured animal lying flat presses its plates down over
 // its belly and legs (half as much again).
+// What a kick or tail swipe would hit: everything alive in the arc behind and beside it and in reach, nearest first.
+// rel: where it is from the heading (rad, + toward +x).
+type Struck = { kind: 'herb'; h: Herbivore } | { kind: 'sauro'; s: Sauro } | { kind: 'small'; m: Small };
+function strikeTargets(w: World, d: Dino, how: 'kick' | 'swipe'): { t: Struck; rel: number }[] {
+  const S = STRIKE[how], reach = how === 'kick' ? S.reach * d.body.hip : S.reach * d.species.length * d.body.size;
+  const out: { t: Struck; rel: number; dist: number }[] = [];
+  const consider = (x: number, z: number, radius: number, t: Struck): void => {
+    const dist = Math.hypot(x - d.x, z - d.z) - radius, rel = wrapAngle(Math.atan2(x - d.x, z - d.z) - d.yaw);
+    if (dist < reach && Math.PI - Math.abs(rel) < S.arc) out.push({ t, rel, dist });
+  };
+  for (const s of w.sauros) if (s.state !== 'dead') consider(s.x, s.z, 0.4 * SAUROSUCHUS.length, { kind: 'sauro', s });
+  for (const h of w.herbivores) if (h.state !== 'dead') consider(h.x, h.z, HYPERODAPEDON.length / 2, { kind: 'herb', h });
+  for (const m of w.smalls) if (exposed(m) && m.kind !== 'fish') consider(m.x, m.z, smallLen(m) / 2, { kind: 'small', m });
+  return out.sort((a, b) => a.dist - b.dist);
+}
+
+function startStrike(d: Dino, how: 'kick' | 'swipe', rel: number): boolean {
+  const S = STRIKE[how];
+  if (d.strike || d.strikeT < S.cooldown || d.stamina <= S.stamina) return false;
+  d.strike = { kind: how, t: 0, side: rel >= 0 ? 1 : -1, done: false };
+  d.strikeT = 0;
+  d.stamina -= S.stamina;
+  return true;
+}
+
+// The blow lands partway through: on everything in the arc then (a swipe can catch two). It shoves hard for its
+// weight, and a Saurosuchus struck by something big enough, or hard enough, breaks off and runs.
+function stepStrike(w: World, slot: PlayerSlot, dt: number): void {
+  const d = slot.dino, k = d.strike;
+  if (!k) return;
+  const S = STRIKE[k.kind];
+  k.t += dt;
+  if (!k.done && k.t >= S.hit) {
+    k.done = true;
+    const now = w.tick * TICK_DT, mass = d.body.mass;
+    for (const { t } of strikeTargets(w, d, k.kind)) {
+      const body = t.kind === 'sauro' ? t.s : t.kind === 'herb' ? t.h : t.m;
+      const tm = t.kind === 'sauro' ? SAUROSUCHUS.mass : t.kind === 'herb' ? HYPERODAPEDON.mass : t.m.mass;
+      const share = Math.min(biteDamage(mass, tm, S.mult, t.kind === 'sauro' ? SAUROSUCHUS.hide : 1), biteCap(mass, tm));
+      const away = Math.atan2(body.x - d.x, body.z - d.z), v = S.knock * smooth(0.15, 1.5, mass / tm);
+      if (v > 0.05) w.knocks.push({ id: body.id, vx: Math.sin(away) * v, vz: Math.cos(away) * v });
+      body.health -= share;
+      w.events.push({ kind: 'hit', who: 'player', x: body.x, y: groundY(body.x, body.z) + 0.4, z: body.z, level: 74 + 8 * share + 10 * Math.log10(mass / 350), share, left: Math.max(0, body.health), target: body.id, yaw: away, blow: k.kind });
+      if (t.kind === 'sauro') {
+        const s = t.s;
+        w.events.push({ kind: 'call', who: 'saurosuchus', call: 'growl', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 1.1), level: 100 });
+        if (s.health <= 0) s.state = 'dead';
+        else if (w.rng.ai() < clamp(STRIKE.deter * (mass / SAUROSUCHUS.mass) + 4 * share, 0, 1)) {
+          s.threat = slot.entity;
+          s.target = -1;
+          s.state = 'flee';
+          s.stateT = 0;
+        }
+      } else {
+        // A struck grazer bolts from it.
+        const a = t.kind === 'herb' ? t.h : t.m;
+        a.threatX = d.x;
+        a.threatZ = d.z;
+        a.alarmAt = now;
+        if (t.kind === 'herb' && t.h.health <= 0) t.h.state = 'dead';
+        if (t.kind === 'small' && t.m.health <= 0) {
+          placeCarcassAt(w, t.m.x, t.m.z, t.m.yaw, t.m.mass * 0.5);
+          t.m.state = 'gone';
+          t.m.stateT = 0;
+        }
+      }
+    }
+  }
+  if (k.t >= S.dur) d.strike = null;
+}
+
+// A player bleeds for a while after being bitten (as long as a bitten animal does).
+const bleeding = (d: Dino): boolean => d.alive && d.hitT < BITE.bleed;
+
 const armourOf = (d: Dino): number => d.species.hide * (d.species.hide > 1.5 ? 1 + 0.5 * d.rest : 1);
 
 // One player's creature for one tick: its actions, needs, footfalls, calls and growth.
@@ -644,12 +750,24 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     let act: Act = 'none';
     let food: Carcass | null = null;
     d.biteT += dt;
+    d.strikeT += dt;
     d.sniff = null;
+    d.trail = null;
     // Lying down or mid-jump, it can't drink, eat or bite.
     const free = !d.resting && d.rest < 0.3 && !d.jump && !(d.fall && d.fall.level !== 'slip');
     const wantEat = free && !!cmd.eat, wantDrink = free && !!cmd.drink;
-    const prey = wantEat ? preyInReach(w, d, BITE.lead * (0.5 + d.body.size)) : null;
-    if (wantDrink) {
+    // The attack button: something behind or beside it gets the defensive move (a kick, a tail swipe); otherwise it
+    // bites what's in front, if it's a biter.
+    const defend = d.species.defend, nip = d.species.attack === 'nip';
+    const foes = wantEat && defend ? strikeTargets(w, d, defend) : [];
+    const prey = wantEat && !foes.length && d.species.attack !== 'none' ? preyInReach(w, d, BITE.lead * (0.5 + d.body.size)) : null;
+    if (d.strike) {
+      // Mid-kick or mid-swipe: it plants and turns only a little.
+      act = d.strike.kind;
+      ov = { yaw: d.yaw, target: 0, turnCap: 0.6, steer: false };
+    } else if (foes.length) {
+      if (startStrike(d, defend!, foes[0].rel)) act = defend!;
+    } else if (wantDrink) {
       const water = findWater(d);
       if (water) ({ act, ov } = approach(d, water.yaw, water.dist, d.body.snout, 'drink'));
       else {
@@ -657,12 +775,16 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
         act = 'sniff';
         ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
         d.sniff = smell(w, d);
+        // Nose down: marks on the ground under the snout.
+        const nose = mouth(d.x, d.z, d.yaw, d.body.snout, 0);
+        d.trail = readTrail(w.trails, w.tick * TICK_DT, nose.x, nose.z, slot.entity);
       }
     } else if (prey) {
       act = 'bite';
-      if (d.biteT >= BITE.cooldown && d.stamina > BITE.stamina && !d.snap) {
+      const cost = BITE.stamina * (nip ? NIP.stamina : 1);
+      if (d.biteT >= BITE.cooldown * (nip ? NIP.cooldown : 1) && d.stamina > cost && !d.snap) {
         d.biteT = 0;
-        d.stamina -= BITE.stamina;
+        d.stamina -= cost;
         d.snap = true;
       }
     } else if (wantEat) {
@@ -695,6 +817,9 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
         // Nothing to eat but ferns: an omnivore browses where it stands.
         act = 'browse';
         ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
+      } else if (defend && d.species.attack === 'none') {
+        // Nothing to eat and nothing there: a non-biter still swings (a warning, and it shows the move).
+        if (startStrike(d, defend, Math.PI)) act = defend;
       }
     }
     if (d.snap && d.biteT >= BITE.snap) {
@@ -703,6 +828,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     }
     d.act = act;
     stepDino(d, cmd, dt, ov);
+    stepStrike(w, slot, dt);
 
     const n = d.needs;
     if (act === 'drink') n.thirst = Math.min(1, n.thirst + NEEDS.drinkRate * dt);
@@ -796,10 +922,10 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   const quarry: Quarry[] = [];
   for (const slot of w.players) {
     const p = slot.dino;
-    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass });
+    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass, bleeding: bleeding(p) });
   }
   for (const h of w.herbivores) {
-    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass });
+    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass, bleeding: h.bleeding > 0 });
   }
   for (const s of w.sauros) {
     const was = s.state;
@@ -908,6 +1034,17 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
       }
     } else if (there < 6) pickGoal(w, herd);
   }
+
+  // Trails: scent from everything on the move, blood from anything bleeding (you too, for a while after a bite).
+  const layers: TrailLayer[] = [];
+  for (const h of w.herbivores) layers.push({ id: h.id, x: h.x, z: h.z, what: 'Hyperodapedon', scent: true, bleeding: h.bleeding > 0 });
+  for (const m of w.smalls) if (exposed(m) && m.kind !== 'fish') layers.push({ id: m.id, x: m.x, z: m.z, what: m.kind === 'exaeretodon' ? 'Exaeretodon' : 'cynodont', scent: true, bleeding: m.bleeding > 0 });
+  for (const s of w.sauros) layers.push({ id: s.id, x: s.x, z: s.z, what: 'Saurosuchus', scent: true, bleeding: s.health < 0.6 });
+  for (const slot of w.players) {
+    const p = slot.dino;
+    if (p.alive && p.egg === 0) layers.push({ id: slot.entity, x: p.x, z: p.z, what: 'you', scent: false, bleeding: bleeding(p) });
+  }
+  layTrails(w.trails, now, dt, layers);
 
   // Carcasses rot away; new ones turn up now and then.
   for (const c of w.carcasses) c.meat -= CARCASS.rot * dt;

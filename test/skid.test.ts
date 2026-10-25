@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HerreraAnimator } from '../src/render/dlist/animator.js';
 import { QuadAnimator } from '../src/render/quadruped';
-import { SPECIES } from '../src/sim/species';
+import { SPECIES, type SpeciesId } from '../src/sim/species';
 
 // Foot placement (Brain: dlist E6, audited 2026-10-23): a swing foot aims where the body will be at touchdown,
 // heading included, and the stance-centring offset is frozen at lift-off. Skid: how fast the landing spot still
@@ -11,7 +11,7 @@ const dt = 1 / 60;
 type Anim = { rigHip: number; plant(x: number, z: number, yaw: number, s: number): void; update(s: object, dt: number): void };
 type Leg = { swing: boolean; liftS: number; footPos: { x: number; z: number }; liftPos: { x: number; z: number } };
 
-function skid(make: () => Anim, id: string, v0: number, acc: number, vMax: number, yawRate: number, T: number): number {
+function skid(make: () => Anim, id: SpeciesId, v0: number, acc: number, vMax: number, yawRate: number, T: number): number {
   const an = make(), sz = SPECIES[id].hip / an.rigHip;
   const legs: Leg[] = (an as unknown as { legs?: Leg[] }).legs ?? (an as unknown as { dino: { legs: Leg[] } }).dino.legs;
   let x = -40, z = -10, yaw = 0, v = v0, worst = 0;
@@ -35,7 +35,7 @@ function skid(make: () => Anim, id: string, v0: number, acc: number, vMax: numbe
   return worst;
 }
 
-const RIGS: [string, () => Anim][] = [
+const RIGS: [SpeciesId, () => Anim][] = [
   ['herrerasaurus', () => new HerreraAnimator('herrerasaurus') as unknown as Anim],
   ['aetosauroides', () => new QuadAnimator('aetosauroides') as unknown as Anim],
   ['proterochampsa', () => new QuadAnimator('proterochampsa') as unknown as Anim],

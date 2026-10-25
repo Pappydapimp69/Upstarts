@@ -6,6 +6,7 @@ import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
 import { SPECIES, SPECIES_ORDER, type SpeciesId } from '../sim/species';
 import type { Objective } from '../sim/objective';
+import type { TrailRead } from '../sim/trails';
 import { onDevice, pressConfirm, state as inputState, type Device } from '../input/input';
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
@@ -31,6 +32,16 @@ const fmt = (s: number): string => {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
 };
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
+// What the nose found on the ground: how fresh, whose, and which way it went from where the camera looks.
+const LAYER: Record<TrailRead['what'], string> = { Hyperodapedon: 'a Hyperodapedon', Exaeretodon: 'an Exaeretodon', cynodont: 'a small cynodont', Saurosuchus: 'Saurosuchus', you: 'another animal' };
+function trailText(r: TrailRead, camYaw: number): string {
+  const fresh = r.age < 30 ? 'Fresh' : r.age < 120 ? 'Recent' : 'Old';
+  const what = `${fresh} ${r.kind === 'blood' ? 'blood' : 'trail'}: ${LAYER[r.what]}`;
+  if (r.yaw === null) return r.kind === 'blood' ? `${what}, it stood here bleeding` : what;
+  const rel = Math.atan2(Math.sin(r.yaw - camYaw - Math.PI), Math.cos(r.yaw - camYaw - Math.PI));
+  const way = Math.abs(rel) < 0.6 ? 'went on ahead' : Math.abs(rel) > 2.5 ? 'went back behind you' : rel > 0 ? 'went off to the left' : 'went off to the right';
+  return `${what}, it ${way}`;
+}
 // What a player would call the time (D11: 10 min dawn, 40 min high sun, 10 min dusk, 20 min night).
 function partOfDay(u: number): string {
   const { dawn, high, dusk } = CLOCK;
@@ -185,10 +196,13 @@ export class Ui {
       : d.resting ? (d.stamina < 0.995 ? 'Lying down, resting' : 'Lying down, rested') : d.rest > 0.05 ? 'Getting up'
       : sp < 0.15 ? 'Standing' : `${sp > 1.08 * d.body.walk ? (sp < 0.68 * d.body.sprintMax ? 'Running' : 'Sprinting') : 'Walking'} · ${sp.toFixed(1)} m/s`;
 
-    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs' : d.act === 'bite' ? 'Biting'
+    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs'
+      : d.act === 'bite' ? (d.grip >= 0 && d.species.attack === 'grab' ? 'Holding it down and biting' : d.grip >= 0 ? 'Holding on' : 'Biting')
+      : d.act === 'kick' ? 'Kicking' : d.act === 'swipe' ? 'Swinging the tail'
       : d.act === 'turn' || d.act === 'shuffle' ? 'Heading for the water'
-      : d.act === 'sniff' ? (d.sniff ? (d.sniff.strength > 0.5 ? 'Strong scent on the wind' : 'Faint scent on the wind') : 'Nothing on the wind')
-      : near.prey ? `Hold <b>${btn.eat}</b> to bite` : near.water ? `Hold <b>${btn.drink}</b> to drink`
+      : d.act === 'sniff' ? (d.trail ? trailText(d.trail, camYaw)
+        : d.sniff ? (d.sniff.strength > 0.5 ? 'Strong scent on the wind' : 'Faint scent on the wind') : 'Nothing on the wind')
+      : near.prey && d.species.attack !== 'none' ? `Hold <b>${btn.eat}</b> to bite` : near.water ? `Hold <b>${btn.drink}</b> to drink`
       : near.food ? `Hold <b>${btn.eat}</b> to eat` : near.browse ? `Hold <b>${btn.eat}</b> to browse the ferns` : '';
     const tear = `Press <b>${btn.go === 'tap' ? 'A' : btn.go}</b> again and again to tear free of the egg · ${EGG.presses - d.egg} of ${EGG.presses}`;
     this.flashT += dt;
@@ -210,13 +224,15 @@ export class Ui {
       goalEl.classList.toggle('danger', goal.key === 'danger' || goal.key === 'drinkNow' || goal.key === 'eatNow');
     }
 
-    // Sniffing: an arrow pointing the way the scent comes from, relative to the camera.
+    // Sniffing: an arrow relative to the camera, along a trail on the ground if the nose is on one, else the way the
+    // scent on the wind comes from.
     const arrow = this.el('scent');
-    if (d.alive && d.act === 'sniff' && d.sniff) {
+    const onTrail = d.trail && d.trail.yaw !== null ? d.trail : null;
+    if (d.alive && d.act === 'sniff' && (onTrail || d.sniff)) {
       arrow.hidden = false;
-      const rel = d.sniff.yaw - (camYaw + Math.PI);
+      const rel = (onTrail ? onTrail.yaw! : d.sniff!.yaw) - (camYaw + Math.PI);
       arrow.style.transform = `rotate(${-rel}rad)`;
-      arrow.style.opacity = String(0.4 + 0.6 * Math.min(1, d.sniff.strength));
+      arrow.style.opacity = String(0.4 + 0.6 * Math.min(1, onTrail ? onTrail.strength : d.sniff!.strength));
     } else arrow.hidden = true;
 
     this.el('hurt').style.opacity = d.alive && d.hitT < 0.6 ? String(1 - d.hitT / 0.6) : '0';

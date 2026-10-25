@@ -16,7 +16,8 @@ export function plume(sx: number, sz: number, strength: number, px: number, pz: 
   const cross = Math.abs(dx * WIND.z - dz * WIND.x);
   const dist = Math.hypot(dx, dz);
   if (dist < UPWIND) return strength * (1 - dist / (UPWIND * 2));
-  if (along <= 0 || along > RANGE) return 0;
+  // A strong source (blood) carries further before it thins out to nothing.
+  if (along <= 0 || along > RANGE * Math.max(1, Math.sqrt(strength))) return 0;
   const sigma = 1.5 + 0.18 * along; // the plume widens downwind
   return (strength * Math.exp(-(cross * cross) / (2 * sigma * sigma))) / (1 + along / 15);
 }

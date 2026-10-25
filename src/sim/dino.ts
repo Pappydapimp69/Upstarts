@@ -8,6 +8,7 @@ import { bodyOf, type Body } from './growth';
 import { pushOutOfTrees } from './flora';
 import type { CallStyle } from './calls';
 import type { Species, SpeciesId } from './species';
+import type { TrailRead } from './trails';
 
 // What a player (or AI, or remote client) asks for this tick. World-space, so the
 // sim never needs to know where a camera is.
@@ -26,7 +27,15 @@ export interface Command {
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
-export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff' | 'dig';
+export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff' | 'dig' | 'kick' | 'swipe';
+
+// A defensive strike in progress (world.ts STRIKE): a kick or a tail swipe at what's behind or beside it.
+export interface Strike {
+  kind: 'kick' | 'swipe';
+  t: number; // s since it started
+  side: number; // +1 to its left, -1 to its right (where the target is)
+  done: boolean; // the blow has landed (or missed)
+}
 
 export interface Dino {
   species: Species;
@@ -52,6 +61,7 @@ export interface Dino {
   callDur: number; // length of that call, s
   gait: number; // footfalls so far (2 per stride), for footstep events
   sniff: { yaw: number; strength: number } | null; // strongest scent while sniffing
+  trail: TrailRead | null; // what the nose finds on the ground while sniffing (sim/trails.ts)
   egg: number; // presses left to tear out of its egg (0: hatched). In the egg it can't move or act.
   jump: Jump | null;
   air: number; // m above the ground (a jump)
@@ -68,7 +78,9 @@ export interface Dino {
   under: number; // afloat and lying low, only eyes and nostrils out: 0 .. 1
   chill: number; // a cold-blooded animal at night: 0 warm .. 1 cold and sluggish (set by the world)
   lungeT: number; // s since an ambush lunge from the water began (9: none)
-  grip: number; // a water ambusher holding on to what it bit (entity id), -1 none
+  grip: number; // holding on to what it bit (entity id), -1 none: a water ambusher's grip, Herrerasaurus's grab
+  strike: Strike | null; // a kick or tail swipe in progress
+  strikeT: number; // s since the last one started
 }
 
 // Afloat once the water is this deep against its hip (a swimmer); wading below that.
@@ -100,8 +112,8 @@ export const STAMINA = { sprint: -0.02, walk: 0.0275, rest: 0.3 };
 export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: groundAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, egg: 0,
-    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null, swim: 0, under: 0, chill: 0, lungeT: 9, grip: -1,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, trail: null, egg: 0,
+    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null, swim: 0, under: 0, chill: 0, lungeT: 9, grip: -1, strike: null, strikeT: 9,
   };
 }
 

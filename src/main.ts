@@ -28,6 +28,7 @@ import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
 import { FrameStats } from './render/frameStats';
+import { TrailView } from './render/trailView';
 import type { SpeciesId } from './sim/species';
 import { bodyScale } from './sim/balance';
 import { Marker } from './render/marker';
@@ -62,6 +63,8 @@ const blood = new Drops(groundAt, BLOOD);
 view.scene.add(blood.points);
 const coatView = new CoatView();
 view.scene.add(coatView.group);
+const trailView = new TrailView();
+view.scene.add(trailView.group);
 // Fight feel (the Dlist demo's): a hit-stop freezes your own animation for a few hundredths of a second when a
 // bite lands, the head shakes to tear, and a bite taken makes it flinch away from that side.
 const fx = { hold: 0, heldBiteT: 0, biteHit: false, hurtT: 9, hurtSide: 0, hurtK: 0, jolt: 0 };
@@ -293,6 +296,7 @@ function frame(now: number): void {
     air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0, swim: p.swim, under: p.under }, held ? 0 : dt);
   blood.update(dt);
   coatView.update(p, herrera, dt);
+  trailView.update(world.trails, world.tick * TICK_DT, p.alive && p.act === 'sniff', dt);
   view.setTime(dayTime(world.tick * TICK_DT));
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);

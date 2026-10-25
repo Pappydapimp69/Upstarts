@@ -28,6 +28,11 @@ export interface Species {
   meat: number; // kg of meat its own carcass holds
   diet: Diet; // carnivore: meat only; omnivore: meat and ferns; rooter: ferns, roots and grubs, carrion, no hunting
   biteMult: number; // bite strength beyond what its mass gives
+  // How it fights (world.ts). attack, with the jaws: bite; grab (bites and holds smaller prey in its hands while it
+  // bites again); nip (quick bites, a long bleed, and it skips back out of reach); grip (a water ambusher holds on
+  // and drowns); none (it doesn't bite to fight). defend, a move for what's behind or beside it: kick, swipe (tail).
+  attack: 'bite' | 'grab' | 'nip' | 'grip' | 'none';
+  defend: 'kick' | 'swipe' | null;
   hide: number; // armour: bites on it do 1/hide of the damage
   hatchSize: number; // hatchling length as a fraction of adult (from egg mass, below)
   toAdult: number; // s of well-fed play from hatching to adult
@@ -67,6 +72,9 @@ function make(o: In): Species {
 export const HERRERASAURUS: Species = make({
   id: 'herrerasaurus', name: 'Herrerasaurus', binomial: 'Herrerasaurus ischigualastensis', plan: 'biped', ecto: false,
   length: 4.8, hip: 1.05, mass: 270, diet: 'carnivore', biteMult: 1, hide: 1, build: 1, swim: 0, calls: 'roar',
+  // Long grasping hands with big curved claws, and a jaw joint that let it grip struggling prey (Sereno and Novas
+  // 1993): it grabs and holds what it bites, if it can overpower it.
+  attack: 'grab', defend: null,
   toAdult: 2.5 * 3600,
   blurb: 'The biggest dinosaur predator in the valley. Fully grown, even Saurosuchus gives it room.',
 });
@@ -77,6 +85,7 @@ export const HERRERASAURUS: Species = make({
 export const EODROMAEUS: Species = make({
   id: 'eodromaeus', name: 'Eodromaeus', binomial: 'Eodromaeus murphi', plan: 'biped', ecto: false,
   length: 1.2, hip: 0.37, mass: 5, diet: 'carnivore', biteMult: 0.9, hide: 1, build: 0.95, legK: 1.1, swim: 0, calls: 'chuff',
+  attack: 'nip', defend: null, // too small to hold anything: quick slashing bites, then out of reach (game design)
   toAdult: 1.2 * 3600,
   blurb: 'Small, quick and fragile. Hunts lizards, grubs and baby cynodonts, and lives by staying out of sight of everything bigger.',
 });
@@ -87,6 +96,9 @@ export const EODROMAEUS: Species = make({
 export const PANPHAGIA: Species = make({
   id: 'panphagia', name: 'Panphagia', binomial: 'Panphagia protos', plan: 'biped', ecto: false,
   length: 1.6, hip: 0.42, mass: 12, diet: 'omnivore', biteMult: 0.6, hide: 1, build: 0.9, neck: 1.4, swim: 0, calls: 'chuff',
+  // Bites small prey, but defends with its long hind legs: a kick at whatever is behind or beside it (game design;
+  // no fossil records how it fought).
+  attack: 'bite', defend: 'kick',
   toAdult: 1.5 * 3600,
   blurb: 'An early long-necked dinosaur that eats ferns and whatever small thing it can catch. Never far from a meal, never safe.',
 });
@@ -98,6 +110,7 @@ export const PANPHAGIA: Species = make({
 export const PROTEROCHAMPSA: Species = make({
   id: 'proterochampsa', name: 'Proterochampsa', binomial: 'Proterochampsa barrionuevoi', plan: 'quad', ecto: true,
   length: 2.5, hip: 0.36, mass: 60, diet: 'carnivore', biteMult: 1.3, hide: 1.2, build: 0.55, sprintK: 1, neck: 1.3, swim: 1.6, calls: 'hiss',
+  attack: 'grip', defend: null,
   toAdult: 2 * 3600,
   blurb: 'A crocodile-like hunter that waits in the pond with only its eyes out, for whatever comes down to drink. Slow on land.',
 });
@@ -110,8 +123,10 @@ export const PROTEROCHAMPSA: Species = make({
 export const AETOSAUROIDES: Species = make({
   id: 'aetosauroides', name: 'Aetosauroides', binomial: 'Aetosauroides scagliai', plan: 'quad', ecto: true,
   length: 2.2, hip: 0.55, mass: 160, diet: 'rooter', biteMult: 0.35, hide: 2.2, build: 0.6, sprintK: 0.6, neck: 0.7, swim: 0, calls: 'hiss',
+  // It doesn't bite to fight: it swings its long armoured tail at whatever is behind or beside it (game design).
+  attack: 'none', defend: 'swipe',
   toAdult: 2.5 * 3600,
-  blurb: 'Armoured from neck to tail. Roots up grubs and browses ferns, and when something bites, lies flat and lets its plates take it.',
+  blurb: 'Armoured from neck to tail. Roots up grubs and browses ferns. When something comes at it, it swings its tail, or lies flat and lets its plates take it.',
 });
 
 // Sanjuansaurus gordilloi: parked (it played like a small Herrerasaurus). Measured anyway: its 395 mm femur gives
@@ -119,6 +134,7 @@ export const AETOSAUROIDES: Species = make({
 export const SANJUANSAURUS: Species = make({
   id: 'sanjuansaurus', name: 'Sanjuansaurus', binomial: 'Sanjuansaurus gordilloi', plan: 'biped', ecto: false,
   length: 4.1, hip: 0.86, mass: 133, diet: 'carnivore', biteMult: 1.05, hide: 1, build: 1.02, swim: 0, calls: 'growl',
+  attack: 'bite', defend: null,
   toAdult: 2 * 3600,
   blurb: 'A mid-sized cousin of Herrerasaurus.',
 });

@@ -38,6 +38,7 @@ export const SAUROSUCHUS = {
   hide: 1, // osteoderms run down the back; bites land on the flanks and neck, so no damage reduction (D20)
   sight: 50,
   smell: 0.12,
+  bloodSmell: 3, // a bleeding animal smells this many times stronger to it
   hears: 45, // dB: the quietest footfall or call it notices
   stealth: 0.35, // multiplier on how far away prey can see it while it stalks (low and crouched)
   eatRate: 1, // kg/s
@@ -86,6 +87,7 @@ export interface Quarry {
   speed: number;
   topSpeed: number;
   mass: number;
+  bleeding?: boolean; // wounded: its blood carries much further on the wind
 }
 
 export function createSauro(id: number, x: number, z: number): Sauro {
@@ -107,7 +109,7 @@ export function sensesQuarry(s: Sauro, q: Quarry, heard: SoundEvent[] = []): boo
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - s.yaw)) < 1.4;
   if (ahead && d < SAUROSUCHUS.sight) return true;
   if (heardFrom(heard, q.id, s.x, s.z, SAUROSUCHUS.hears)) return true;
-  return plume(q.x, q.z, 1, s.x, s.z) > SAUROSUCHUS.smell;
+  return plume(q.x, q.z, q.bleeding ? SAUROSUCHUS.bloodSmell : 1, s.x, s.z) > SAUROSUCHUS.smell;
 }
 
 export interface SauroWorld {
