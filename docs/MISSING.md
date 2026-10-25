@@ -29,25 +29,26 @@ Sound (procedural engine) and footstep rumble are in, ahead of the roadmap.
 ## 2. Contradictions to settle first
 
 These are places where the plans disagree with each other or with the code. Building on top of them
-makes them more expensive later.
+makes them more expensive later. **Update 2026-10-25:** Upstarts is the game and Dlist the reference; items 2, 4,
+5 and 6 are settled (see Dlist `docs/PORTING.md`, Roles).
 
 1. **Player identity (open tension T3).** The blueprint says "player identity lives in the world state
    from day one". The code has a single `world.player`. Every system added from here on (sleep,
    saves, egg, calls) hardens that assumption. *Cheapest to fix now.*
-2. **AI hearing.** Blueprint §9 and Brain lesson sound-engine/E7: animals hear sim sound events. The
+2. **AI hearing.** *Settled: animals hear sim events (`sim/hearing.ts`).* Blueprint §9 and Brain lesson sound-engine/E7: animals hear sim sound events. The
    code uses a `noiseOf` radius, and footsteps come from the client's animators, so what the player
    hears and what animals hear can disagree. Footfalls need to come from the sim's gait phase.
 3. **Hatchling scale.** The Dlist tutorial (TD1) keeps the rig at adult size and builds the world 4x
    oversize. Upstarts scales the creature itself with growth. **The tutorial can't be ported as is**:
    its nest, plant sizes, prey sizes and camera distances assume the 4x world. Port the *beats*
    (egg, chirp, big-head look), not the layout.
-4. **Damage model.** The demo uses `share = 0.2 r^1.5`, `r = (Ma/Mt)^(2/3) × bite/hide`, with hit-stop,
+4. **Damage model.** *Settled: the game's, by weight (`sim/combat.ts`, owner's call).* The demo uses `share = 0.2 r^1.5`, `r = (Ma/Mt)^(2/3) × bite/hide`, with hit-stop,
    knockback and fight-back. Upstarts uses `0.16 √(Ma/Mt)`. These give different outcomes for the
    same fight. Pick one.
-5. **Controls.** Demo: X bite, B drink *and eat* (eat outranks drink, TD7), Y roar, A jump, LT rest.
+5. **Controls.** *Settled: Y roar, A jump and LT rest are in; only eating differs (X here, B in the demo).* Demo: X bite, B drink *and eat* (eat outranks drink, TD7), Y roar, A jump, LT rest.
    Upstarts: X eat *and bite*, B drink and sniff, no Y, A, LT. A player moving from the demo to the
    game relearns the pad. Pick one map.
-6. **Stamina.** The demo cut recovery to a quarter (11 to 2.75%/s) so resting matters. Upstarts still
+6. **Stamina.** *Settled: 2.75%/s on its feet and 30%/s resting, with a Rest verb.* The demo cut recovery to a quarter (11 to 2.75%/s) so resting matters. Upstarts still
    regenerates 11%/s and has no Rest verb.
 7. **Tutorial location.** You said the tutorial is built in the demo. "Start inside an egg" in
    Upstarts is therefore a **hatch sequence**, not the tutorial. Worth confirming that's the split.

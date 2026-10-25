@@ -22,3 +22,9 @@ thread on phones. Output is unchanged (checked against the old file on an offlin
 
 Upstarts serves this folder as static files from `public/sound-engine/` (copied from the Dlist demo's vendor folder,
 voice patch included) and imports it at runtime, so the worklet resolves its own path on GitHub Pages.
+
+## Upstreamed (2026-10-25)
+
+Both local changes above are now in `pappydapimp69/sound-engine` (commit `759bdbd`, branch
+`claude/sweet-brown-q1bxjk`; merge it to `main` there). This copy matches that commit, so a re-copy from it drops
+nothing. From here on, fix the engine there and copy `src/` into Dlist and Upstarts both.

@@ -2,7 +2,9 @@
 
 Browser-based Triassic dinosaur survival game. Three.js + TypeScript.
 
-The shareable demo and the tutorial live in [Dlist](https://github.com/Pappydapimp69/Dlist).
+This is the main game. [Dlist](https://github.com/Pappydapimp69/Dlist) is the reference: the demo where movement,
+balance, sound and haptics are tuned first, and the tutorial. Its `docs/PORTING.md` says which repo owns what and
+how forks between them were settled.
 The plan is in [docs/BLUEPRINT.md](docs/BLUEPRINT.md).
 
 ## Run
