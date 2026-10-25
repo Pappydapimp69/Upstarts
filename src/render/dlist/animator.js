@@ -205,6 +205,14 @@ export class HerreraAnimator {
     }
     let biteYaw = 0;
     if (s.biteHit && s.biteT > 0.24 && s.biteT < 0.62) biteYaw = 0.3 * Math.sin((s.biteT - 0.24) * 30) * (1 - smooth(0.3, 0.62, s.biteT)); // the tearing shake
+    // Holding prey down (Herrerasaurus's grab): head low over it, worrying at it, the arms clamped on.
+    const holding = s.holding ? 1 : 0;
+    if (holding) biteYaw += 0.12 * Math.sin(D.time * 13) * (0.5 + 0.5 * Math.sin(D.time * 2.1));
+    // A kick (Panphagia): chamber the leg on the target's side up under the body, drive it back and out, recover; the
+    // body tips forward to balance it and the head looks back over that shoulder.
+    const kickS = s.strike && s.strike.kind === 'kick' ? s.strike : null;
+    const kickE = kickS ? (kickS.t < 0.12 ? smooth(0, 0.12, kickS.t) : 1 - smooth(0.26, 0.55, kickS.t)) : 0;
+    const kickOut = kickS ? smooth(0.1, 0.19, kickS.t) * (1 - smooth(0.3, 0.55, kickS.t)) : 0;
     const hurtE = s.hurtT !== undefined && s.hurtT < 0.8 ? (s.hurtK || 0) * Math.exp(-s.hurtT * 6) * smooth(0, 0.04, s.hurtT) : 0, hurtSide = s.hurtSide || 0;
     const pant = smooth(2, 5, D.sprintT);
     jawOpen = Math.max(jawOpen, pant * (0.12 + 0.06 * Math.sin(D.time * 9)));
@@ -233,16 +241,37 @@ export class HerreraAnimator {
       const bt = D.actT % 1.5;
       for (const ti of [0.1, 0.26, 0.42]) { nose += Math.exp(-(((bt - ti) / 0.035) ** 2)); if (bt >= ti && (D.actU < ti || D.actU > bt)) this.onSound?.('sniff', snout); }
       D.actU = bt;
-    } else if (D.act === 'eat' || D.act === 'browse' || D.act === 'dig') {
-      // Head down on the kill: grip, tear back, swallow.
+    } else if (D.act === 'eat') {
+      // On a kill, feet planted: jaws open onto the meat, clamp and shake, haul back with the whole body to tear a
+      // strip off, then head up and back to toss it down the throat (the gulp runs down the neck).
       dipTo = s.dipY ?? null;
-      hdT = 1; const P = 1.1, u = D.actT % P;
-      jawOpen = Math.max(jawOpen, u < 0.35 ? 0.45 * smooth(0, 0.3, u) : 0.45 * (1 - smooth(0.35, 0.45, u)));
-      tiltT = u > 0.45 && u < 0.85 ? 0.35 : 0;
-      if (u >= 0.42 && (D.actU < 0.42 || D.actU > u)) this.onSound?.('tear', snout);
+      const P = 1.7, u = D.actT % P;
+      if (u < 0.35) { hdT = 1; jawOpen = Math.max(jawOpen, 0.5 * smooth(0, 0.3, u)); }
+      else if (u < 0.55) { hdT = 1; jawOpen = 0.5 * (1 - smooth(0.35, 0.42, u)); biteYaw = 0.22 * Math.sin((u - 0.35) * 40); }
+      else if (u < 0.95) { hdT = lerp(1, 0.55, smooth(0.55, 0.9, u)); lunge = -0.6 * Math.sin(Math.PI * (u - 0.55) / 0.4); }
+      else if (u < 1.45) { hdT = 0.15; tiltT = 1; jawOpen = Math.max(jawOpen, 0.12 * (1 - smooth(0.95, 1.1, u))); gulp = (u - 1.0) / 0.45; }
+      else hdT = lerp(0.15, 1, smooth(1.45, 1.7, u));
+      if (u >= 0.6 && (D.actU < 0.6 || D.actU > u)) this.onSound?.('tear', snout);
+      if (u >= 1.05 && D.actU < 1.05) this.onSound?.('gulp', snout);
       D.actU = u;
+    } else if (D.act === 'browse') {
+      // Ferns: head low, stripping fronds with quick sideways tugs, chewing as it goes.
+      dipTo = s.dipY ?? null;
+      hdT = 0.75;
+      hyawT = 0.3 * Math.sin(D.actT * 2.2);
+      jawOpen = Math.max(jawOpen, 0.16 * Math.max(0, Math.sin(D.actT * 9)));
+      const u = D.actT % 0.9;
+      if (u >= 0.5 && (D.actU < 0.5 || D.actU > u)) this.onSound?.('tear', snout);
+      D.actU = u;
+    } else if (D.act === 'dig') {
+      // Grubs: snout jabbed into the dirt again and again, the head jerking up between jabs.
+      dipTo = s.dipY ?? null;
+      hdT = 1;
+      lunge = 0.35 * Math.max(0, Math.sin(D.actT * 8));
+      tiltT = 0.25 * Math.max(0, -Math.sin(D.actT * 8));
     }
-    hdT = Math.max(hdT, 0.55 * (s.rest || 0));
+    hdT = Math.max(hdT, 0.55 * (s.rest || 0), 0.7 * holding);
+    if (kickS) hyawT += kickS.side * 0.9 * kickE;
     D.hd = damp(D.hd, hdT, 5, dt); D.hu = damp(D.hu, huT, 4, dt); D.tilt = damp(D.tilt, tiltT, 6, dt); D.hyaw = damp(D.hyaw, hyawT, 4, dt);
     if (dipTo != null && D.hd > 0.6) D.dip = clamp(D.dip + (snout.y - dipTo) / sz * 2.5 * dt, -0.3, 0.8); else D.dip = damp(D.dip, 0, 2, dt);
     const gv = skinU.uGulp.value;
@@ -267,7 +296,7 @@ export class HerreraAnimator {
     dino.rig.scale.setScalar(sz);
     const hd = D.hd, dip = D.dip * D.hd;
     // Walk: trunk a little nose-up. Sprint: trunk level and leaned forward, legs more bent.
-    const pelvisPitch = -slope * 0.75 + D.pitchF + lerp(-0.03, 0.09, run) + hd * 0.22 + dip * 0.1 + lunge * 0.05 + fallPitch;
+    const pelvisPitch = -slope * 0.75 + D.pitchF + lerp(-0.03, 0.09, run) + hd * 0.22 + dip * 0.1 + lunge * 0.05 + fallPitch + 0.22 * kickE;
     // Lying down to rest, crouching to jump, and the squash of a landing.
     const rest = s.rest || 0, crouch = s.crouch || 0;
     D.land = Math.max(0, (D.land || 0) - dt * 4);
@@ -304,12 +333,15 @@ export class HerreraAnimator {
     // Walk: slight droop. Sprint: held straight out.
     const tailPitch = lerp(-0.02, 0.03, run) + bob * 0.6 - lieK * 0.06 + 0.12 * rest + fl2 * 0.15;
     dino.tails.forEach((t, k) => t.rotation.set(tailPitch * (1 + k * 0.1) + (k === 0 ? slope * 0.5 - D.pitchF * 0.5 - hd * 0.12 : 0), TAIL_W[k] * (D.tailYaw + wag), 0));
+    // Grasping hands (a grab species): they reach forward with the strike and clamp down while it holds on.
+    D.grasp = damp(D.grasp || 0, s.grabber ? Math.max(holding, Math.max(0, lunge)) : 0, 10, dt);
+    const gr = D.grasp;
     for (const S of ['L', 'R']) {
       const sgnA = S === 'L' ? 1 : -1;
       // Arms flail to catch the balance in a stumble or a fall.
-      B['upper' + S].rotation.set(0.12 * Math.sin(ph + (sgnA > 0 ? 0 : Math.PI)) * mf + lunge * 0.15 - lieK * 0.4 + 0.6 * (sgnA > 0 ? fl : fl2), 0.4 * flail * sgnA, 0);
-      B['fore' + S].rotation.set(-0.15 - 0.5 * flail, 0, 0);
-      B['hand' + S].rotation.set(0.1 * Math.sin(D.time * 1.1 + sgnA), 0, 0);
+      B['upper' + S].rotation.set(0.12 * Math.sin(ph + (sgnA > 0 ? 0 : Math.PI)) * mf + lunge * 0.15 - lieK * 0.4 + 0.6 * (sgnA > 0 ? fl : fl2) + 0.95 * gr, 0.4 * flail * sgnA - 0.15 * gr * sgnA, 0);
+      B['fore' + S].rotation.set(-0.15 - 0.5 * flail - 0.55 * gr, 0, 0);
+      B['hand' + S].rotation.set(0.1 * Math.sin(D.time * 1.1 + sgnA) + 0.7 * gr, 0, 0);
     }
     dino.rig.updateMatrixWorld(true);
 
@@ -327,6 +359,10 @@ export class HerreraAnimator {
         const li = legs.indexOf(L), wv = Math.sin(D.time * 9 / BK.ts + li * 2.6), up = sideK * L.sx > 0 ? 1 : 0;
         const tgt = B.pelvis.localToWorld(V(L.sx * (0.2 + 0.25 * up * kick * (0.5 + 0.5 * wv)), -0.82 + 0.18 * kick * wv, 0.18 + 0.3 * kick * wv));
         Fp.lerp(tgt, smooth(0, 0.6, fe));
+      } else if (kickS && L.sx === kickS.side && kickE > 0) {
+        // The kicking foot: up under the body, then back and out at the target.
+        const chamber = V(L.sx * 0.16, -0.5, 0.22), out = V(L.sx * 0.38, -0.6, -0.9);
+        Fp.lerp(B.pelvis.localToWorld(chamber.lerp(out, kickOut)), kickE);
       }
       const swing = (L.liftS || 0) > 0;
       // Heel lifts through stance toward toe-off; more if the hip would otherwise be out of reach (E3).

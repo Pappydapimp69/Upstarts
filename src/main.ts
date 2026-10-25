@@ -293,7 +293,8 @@ function frame(now: number): void {
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
     biteT: held ? fx.heldBiteT : p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
     biteHit: fx.biteHit, hurtT: fx.hurtT, hurtSide: fx.hurtSide, hurtK: fx.hurtK, fall: p.fall, bodyK: bodyScale(p),
-    air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0, swim: p.swim, under: p.under }, held ? 0 : dt);
+    air: Math.max(0, y - groundAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0, swim: p.swim, under: p.under,
+    strike: p.strike, holding: p.grip >= 0, grabber: p.species.attack === 'grab' }, held ? 0 : dt);
   blood.update(dt);
   coatView.update(p, herrera, dt);
   trailView.update(world.trails, world.tick * TICK_DT, p.alive && p.act === 'sniff', dt);

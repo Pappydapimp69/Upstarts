@@ -60,6 +60,8 @@ export interface QuadState {
   x: number; z: number; yaw: number; speed: number; accel: number; yawRate: number; act: string; alive: boolean;
   biteT: number; sprinting: boolean; size: number; dipY?: number; rest: number; swim: number; under: number;
   biteHit?: boolean; hurtT?: number; hurtSide?: number; hurtK?: number;
+  strike?: { kind: 'kick' | 'swipe'; t: number; side: number } | null; // a tail swipe in progress
+  holding?: boolean; // gripping prey
   fall?: { level: string; t: number; dur: number; side: number; sev: number } | null;
   [extra: string]: unknown; // the biped's inputs it ignores (crouch, air, bodyK)
 }
@@ -96,6 +98,7 @@ export class QuadAnimator {
   private hd = 0; // head down 0..1
   private tailYaw = 0;
   private tailV = 0;
+  private lastK = 0; // where the eating cycle was last frame (for its sounds)
   private readonly side = 1;
 
   constructor(speciesId: string) {
@@ -276,15 +279,43 @@ export class QuadAnimator {
     B.chest.rotation.set(0, -sway * 0.7 + bend + wave(-2), 0);
 
     // ---- head and neck: drink, eat, browse, dig, bite, sniff ----
-    let hdT = 0, jawOpen = 0, lunge = 0, nodY = 0;
+    let hdT = 0, jawOpen = 0, lunge = 0, nodY = 0, twist = 0, toss = 0;
     const u = this.actT;
     if (this.act === 'drink') hdT = 1;
-    else if (this.act === 'eat' || this.act === 'browse' || this.act === 'dig') {
-      hdT = 0.9;
-      nodY = 0.12 * Math.sin(u * (this.act === 'dig' ? 9 : 5));
-      jawOpen = this.act === 'eat' ? 0.25 + 0.2 * Math.max(0, Math.sin(u * 6)) : 0.1 * Math.max(0, Math.sin(u * 7));
-      if (this.act === 'eat' && Math.sin(u * 6) > 0.98) this.onSound?.('tear', this.snout());
+    else if (this.act === 'eat') {
+      // On a kill: jaws onto the meat, clamp and wrench the head sideways to tear, haul back, then toss the head up to
+      // swallow the piece (a crocodile can't chew).
+      const P = 1.6, k = u % P;
+      if (k < 0.3) { hdT = 1; jawOpen = 0.55 * smooth(0, 0.25, k); }
+      else if (k < 0.6) { hdT = 1; jawOpen = 0.55 * (1 - smooth(0.3, 0.36, k)); twist = 0.45 * Math.sin((k - 0.3) * 21); }
+      else if (k < 0.9) { hdT = lerp(1, 0.6, smooth(0.6, 0.85, k)); lunge = -0.7 * Math.sin(Math.PI * (k - 0.6) / 0.3); }
+      else if (k < 1.35) { hdT = 0; toss = Math.sin(Math.PI * (k - 0.9) / 0.45); jawOpen = 0.25 * toss; }
+      if (k >= 0.62 && (this.lastK < 0.62 || this.lastK > k)) this.onSound?.('tear', this.snout());
+      if (k >= 1.1 && this.lastK < 1.1) this.onSound?.('gulp', this.snout());
+      this.lastK = k;
+    } else if (this.act === 'browse') {
+      // Ferns: head low, sweeping side to side, cropping as it goes.
+      hdT = 0.85;
+      twist = 0.3 * Math.sin(u * 2);
+      jawOpen = 0.14 * Math.max(0, Math.sin(u * 8));
+    } else if (this.act === 'dig') {
+      // Rooting: the shovel snout shoved into the dirt and levered up, again and again.
+      hdT = 1;
+      nodY = 0.22 * Math.max(0, Math.sin(u * 7));
+      lunge = 0.4 * Math.max(0, Math.sin(u * 7));
     } else if (this.act === 'turn' || this.act === 'shuffle') hdT = 0.4;
+    // Holding on (a water ambusher's grip): head low, wrenching and rolling against the prey.
+    if (s.holding) {
+      hdT = Math.max(hdT, 0.6);
+      twist += 0.3 * Math.sin(this.time * 7);
+    }
+    // A tail swipe: cock the tail away, then swing it hard through the target's side and recover; the hips swing the
+    // other way and the head looks back at what it's hitting.
+    const SW = s.strike && s.strike.kind === 'swipe' ? s.strike : null;
+    const cock = SW ? smooth(0, 0.18, SW.t) * (1 - smooth(0.2, 0.3, SW.t)) : 0;
+    const swing = SW ? smooth(0.2, 0.32, SW.t) * (1 - smooth(0.42, 0.85, SW.t)) : 0;
+    const swipeYaw = SW ? SW.side * (0.55 * cock - 1.25 * swing) : 0;
+    const look = SW ? SW.side * 0.7 * Math.max(cock, swing) : 0;
     if (s.biteT >= 0 && s.biteT < 0.56) {
       const o = s.biteT;
       jawOpen = Math.max(jawOpen, (o < 0.16 ? smooth(0, 0.16, o) : o < 0.24 ? 1 - smooth(0.16, 0.24, o) : 0) * 0.75);
@@ -293,12 +324,13 @@ export class QuadAnimator {
     this.hd = damp(this.hd, hdT, 4, dt);
     const shake = s.biteHit && s.biteT > 0.24 && s.biteT < 0.62 ? 0.3 * Math.sin((s.biteT - 0.24) * 30) * (1 - smooth(0.3, 0.62, s.biteT)) : 0;
     // A croc-line head snaps sideways at prey and counters the spine's sway, so the head holds its line.
-    const neckX = 0.4 * this.hd - this.pitch * 0.6 + nodY - 0.15 * swim * (1 - s.under) + 0.25 * rest * onLand;
-    const neckY = s.yawRate * 0.05 + shake + (s.hurtSide || 0) * -0.4 * hurtE + sway * 0.5;
+    const neckX = 0.4 * this.hd - this.pitch * 0.6 + nodY - 0.15 * swim * (1 - s.under) + 0.25 * rest * onLand - 0.5 * toss;
+    const neckY = s.yawRate * 0.05 + shake + (s.hurtSide || 0) * -0.4 * hurtE + sway * 0.5 + twist + look;
     B.neck1.rotation.set(neckX * 0.55, neckY * 0.5, 0.5 * this.side * lie);
     B.neck2.rotation.set(neckX * 0.45, neckY * 0.5, 0);
     B.neck1.position.copy(this.rest0.neck1).add(V(0, 0, lunge * 0.08 * hipH));
-    B.head.rotation.set(0.25 * this.hd - lunge * 0.08 + 0.12 * swim - 0.1 * rest * onLand, 0, 0);
+    B.head.rotation.set(0.25 * this.hd - lunge * 0.08 + 0.12 * swim - 0.1 * rest * onLand - 0.35 * toss, 0, 0.6 * twist * (s.holding ? 1 : 0.4));
+    B.pelvis.rotation.y = -0.3 * swipeYaw;
     B.jaw.rotation.set(jawOpen, 0, 0);
     if (this.act === 'drink') {
       const k = (u * 1.3) % 1;
@@ -318,7 +350,7 @@ export class QuadAnimator {
       const walk = -(0.05 + 0.13 * this.sprawl) * 0.8 * Math.sin(ph - (k + 1) * 0.6);
       // Resting it lies along the ground; standing, the root lifts it clear and the tip trails.
       const droop = (0.04 + 0.03 * k / nT) * onLand * (1 - rest) - 0.05 * rest;
-      b.rotation.set(-droop * (k === 0 ? -1 : 0.5), this.tailYaw * (k < 2 ? 0.35 : 0.2) + walk * mf + swimAmp * wv * (0.4 + 0.3 * k), 0);
+      b.rotation.set(-droop * (k === 0 ? -1 : 0.5), this.tailYaw * (k < 2 ? 0.35 : 0.2) + walk * mf + swimAmp * wv * (0.4 + 0.3 * k) + swipeYaw * (k < 2 ? 0.3 : 0.12), 0);
     });
 
     this.root.updateMatrixWorld(true);
