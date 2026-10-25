@@ -26,7 +26,7 @@ class SourceProcessor extends AudioWorkletProcessor {
     this.kind = o.kind || 'voice';
     if (this.kind === 'voice') {
       const size = CREATURES[o.creature] || { tract: o.tract ?? 0.7, sac: o.sac ?? 0.35 };
-      this.gen = new CreatureVoice(fs, { ...size, seed: o.seed ?? 3 });
+      this.gen = new CreatureVoice(fs, { ...size, seed: o.seed ?? 3, realism: !!o.realism });
     } else if (this.kind === 'footsteps') {
       this.gen = new FootstepSynth(fs, o.seed ?? 7);
     } else if (this.kind === 'water') {

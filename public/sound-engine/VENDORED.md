@@ -1,30 +1,20 @@
 # Vendored: sound-engine
 
-Copied from `pappydapimp69/sound-engine` `src/` at commit `b028f469f713a451861e076070da1222f020e268`.
-Plain ES modules with no dependencies. Don't edit here; change the engine repo and copy `src/` again.
+Copied from `pappydapimp69/sound-engine` `src/` at commit `5045b6d` (branch `claude/sweet-brown-q1bxjk`, not yet
+merged to `main` there). Plain ES modules with no dependencies. **No local changes.** Don't edit here: fix the
+engine repo, then copy its `src/` into Dlist and Upstarts both, from the engine repo, never from another copy.
 
-It sits next to the demo page so the same relative path (`./vendor/sound-engine/index.js`) works in the repo,
-on GitHub Pages and in the published artifact. When the game proper starts (M0) it moves to a top-level vendor folder.
+Upstarts serves this folder as static files from `public/sound-engine/` and imports it at runtime, so the worklet resolves its own path on GitHub Pages.
 
-## Local change (diverges from upstream)
+## Sound styles in use
 
-`dsp/voice.js` carries `docs/proposals/sound-engine-voice-realism.patch`, applied here at the owner's request
-(2026-10-21): aspiration scaled to the glottal pulse and gated by the open phase, per-period jitter and shimmer,
-and a glottal phase per call. Upstream it into `pappydapimp69/sound-engine` before the next re-copy of `src/`,
-or the re-copy will drop it.
+A change that alters the sound is an opt-in style in the engine, never a new default (engine `docs/IDEAS.md`).
+This project turns on:
 
-`worklet/processors.js` (2026-10-21, owner: audio is static on mobile): a source sleeps once its generator has been
-silent for longer than its delay line holds, outputting zeros until its next trigger, and the reverb sleeps once its
-input and tail are silent. Every source used to run its full DSP every sample, idle or not, which overran the audio
-thread on phones. Output is unchanged (checked against the old file on an offline render). Upstream this too.
+- `realism: true` on every voice source: per-call glottal phase, jitter and shimmer, audible aspiration. The owner
+  heard the classic calls as cartoonish (2026-10-21).
 
-## Upstarts copy
+## History
 
-Upstarts serves this folder as static files from `public/sound-engine/` (copied from the Dlist demo's vendor folder,
-voice patch included) and imports it at runtime, so the worklet resolves its own path on GitHub Pages.
-
-## Upstreamed (2026-10-25)
-
-Both local changes above are now in `pappydapimp69/sound-engine` (commit `759bdbd`, branch
-`claude/sweet-brown-q1bxjk`; merge it to `main` there). This copy matches that commit, so a re-copy from it drops
-nothing. From here on, fix the engine there and copy `src/` into Dlist and Upstarts both.
+- 2026-10-21: the voice-realism patch and the "idle sources sleep" fix (audio static on phones) were made in the
+  copy only. 2026-10-25: both upstreamed; the realism patch became the opt-in style above.

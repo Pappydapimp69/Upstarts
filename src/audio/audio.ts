@@ -93,7 +93,7 @@ export class AudioLayer {
     wind.start();
 
     const S = this.S;
-    S.voice = engine.createSource('voice', { creature: 'herrerasaurus', priority: 20, level: 100, seed: 11 });
+    S.voice = engine.createSource('voice', { realism: true, creature: 'herrerasaurus', priority: 20, level: 100, seed: 11 });
     S.feet = engine.createSource('footsteps', { priority: 6, seed: 12 });
     // Teeth meeting: a hard, heavily damped click (many inharmonic modes, ~10 ms ring), not a ringing block.
     S.jaw = engine.createSource('modal', { modes: [1800, 2650, 3300, 4700, 6100, 6900, 9100].map((freq, i) => ({ freq, gain: 1 / (1 + 0.4 * i) })), lossFactor: 0.12, level: 88, priority: 8, seed: 13 });
@@ -102,10 +102,10 @@ export class AudioLayer {
     S.drips = engine.createSource('water', { preset: { rate: 0, gamma: 1, minRadius: 0.0015, maxRadius: 0.004, rising: 1 }, level: 45, seed: 19 });
     // Swallowing: water moving down the throat, big low bubbles, heard through the neck (muffled by occlusion).
     S.throat = engine.createSource('water', { preset: { rate: 0, gamma: 1.5, minRadius: 0.004, maxRadius: 0.014, rising: 0.2 }, level: 50, seed: 20 });
-    S.nose = engine.createSource('voice', { tract: 0.06, sac: 0.05, level: 54, seed: 15 }); // nostrils: short tube, resonances from 1.4 kHz up
+    S.nose = engine.createSource('voice', { realism: true, tract: 0.06, sac: 0.05, level: 54, seed: 15 }); // nostrils: short tube, resonances from 1.4 kHz up
     S.crunch = engine.createSource('footsteps', { level: 60, seed: 16 }); // tearing meat at the mouth
-    S.prey = engine.createSource('voice', { tract: 0.12, sac: 0.06, level: 74, priority: 8, seed: 17 }); // Hyperodapedon
-    S.sauro = engine.createSource('voice', { creature: 'large', level: 104, priority: 18, seed: 18 });
+    S.prey = engine.createSource('voice', { realism: true, tract: 0.12, sac: 0.06, level: 74, priority: 8, seed: 17 }); // Hyperodapedon
+    S.sauro = engine.createSource('voice', { realism: true, creature: 'large', level: 104, priority: 18, seed: 18 });
     S.sauroFeet = engine.createSource('footsteps', { priority: 9, seed: 21 });
     S.sauroJaw = engine.createSource('modal', { modes: [900, 1400, 2100, 3300, 4400].map((freq, i) => ({ freq, gain: 1 / (1 + 0.4 * i) })), lossFactor: 0.1, level: 96, priority: 9, seed: 22 });
     S.hit = engine.createSource('footsteps', { priority: 8, seed: 23 });

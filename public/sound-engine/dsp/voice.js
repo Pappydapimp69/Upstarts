@@ -47,8 +47,11 @@ export const CREATURES = {
  * call is a near pure tone (99% in the fundamental at resonance).
  */
 export class CreatureVoice {
-  constructor(fs, { tract = 0.7, sac = 0.35, seed = 3 } = {}) {
+  // realism: opt-in voice style (per-call glottal phase, jitter and shimmer, aspiration on the open phase). Off by
+  // default so the classic voice never changes under a project that didn't ask for it.
+  constructor(fs, { tract = 0.7, sac = 0.35, seed = 3, realism = false } = {}) {
     this.fs = fs;
+    this.realism = realism;
     this.noise = new Noise(seed);
     this.setSize(tract, sac);
     this.calls = [];
@@ -112,6 +115,18 @@ export class CreatureVoice {
       const u = c.t / c.len;
       const env = Math.min(1, u / 0.06) * Math.min(1, (1 - u) / 0.25);
       c.wob += (this.noise.bipolar() * 0.02 - c.wob * 0.001) * c.jitter;
+      if (!this.realism) {
+        // The classic voice: one shared glottal phase, flat breath noise.
+        const f0 = (c.a * (c.b / c.a) ** u) * (1 + c.wob * 0.05);
+        this.phase += f0 / this.fs;
+        if (this.phase >= 1) { this.phase -= 1; this.sub ^= 1; }
+        let s = CreatureVoice.pulse(this.phase) * (1 - c.roughness * 0.5 * this.sub);
+        s += c.breath * this.noise.bipolar() * 0.5;
+        s *= env * c.amp;
+        if (c.mode === 'closed') closed += s; else open += s;
+        if (++c.t < c.len) keep.push(c);
+        continue;
+      }
       // Each call keeps its own glottal phase. Per period: cycle-to-cycle jitter (~1-2% of the period) and shimmer
       // (~1 dB of loudness), the irregularity real voices have and a clean pulse train lacks.
       const f0 = (c.a * (c.b / c.a) ** u) * (1 + c.wob * 0.05) * c.pj;

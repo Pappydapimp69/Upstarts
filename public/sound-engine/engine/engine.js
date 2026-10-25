@@ -170,7 +170,7 @@ export class Source {
       outputChannelCount: [2, 1],
       processorOptions: {
         kind,
-        creature: o.creature, tract: o.tract, sac: o.sac,
+        creature: o.creature, tract: o.tract, sac: o.sac, realism: o.realism,
         preset: o.preset, modes: o.modes, lossFactor: o.lossFactor,
         interp: o.interp || (kind === 'voice' ? 'lagrange4' : 'lagrange6'),
         law: engine.law,
