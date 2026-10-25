@@ -27,6 +27,7 @@ import { setPlaying, setRoarLabel, state as inputState } from './input/input';
 import { CALLS, roarStyle } from './sim/calls';
 import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
+import { FrameStats } from './render/frameStats';
 import type { SpeciesId } from './sim/species';
 import { bodyScale } from './sim/balance';
 import { Marker } from './render/marker';
@@ -35,6 +36,7 @@ import { CoatView, coatText } from './render/coatView';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
+const stats = params.has('fps') ? new FrameStats() : null; // frame meter for checking a phone
 const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
 // Testing (the owner's call): growth runs 101x (+10000%), so a Herrerasaurus is adult in about 90 s of
 // fed play. ?realgrowth turns it off.
@@ -158,6 +160,7 @@ function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.25);
   last = now;
   acc += dt;
+  stats?.begin();
   const inp = readInput();
   if (!started) {
     if (inp.nav) ui.move(inp.nav);
@@ -269,6 +272,7 @@ function frame(now: number): void {
       cam.snapBehind(p);
     }
   }
+  stats?.simDone();
   const a = acc / TICK_DT;
   const x = lerp(prev.x, p.x, a), y = lerp(prev.y, p.y, a), z = lerp(prev.z, p.z, a);
   const yaw = prev.yaw + wrapAngle(p.yaw - prev.yaw) * a;
@@ -311,7 +315,9 @@ function frame(now: number): void {
   fernCut.uCutDisc.value = Math.max(1, 1.5 * p.species.length * p.body.size);
   fernCut.uCutDiscK.value = p.alive ? 0.85 * (1 - smooth(0.5, 1, p.body.hip)) : 0;
   view.followSun(x, y, z);
+  stats?.updateDone();
   view.render(dt);
+  stats?.end(now, view.renderer);
   const near = nearby();
   const goal = live ? objectiveOf(world) : null;
   marker.update(goal?.at ?? null, goal?.at ? groundAt(goal.at.x, goal.at.z) : 0, goal?.at ? Math.hypot(goal.at.x - p.x, goal.at.z - p.z) : 0, dt);

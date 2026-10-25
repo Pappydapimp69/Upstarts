@@ -30,6 +30,7 @@ interface QLeg extends LegRig {
   swing: boolean;
   liftS: number;
   groundY: number;
+  centre: number; // stance-centring offset, frozen at lift-off (Brain: dlist E6)
 }
 interface QuadModel {
   rig: THREE.Group; B: Record<string, Bone>; bodyMesh: THREE.SkinnedMesh; legs: LegRig[]; tails: Bone[]; hip: number; bodyVEnd: number;
@@ -105,7 +106,7 @@ export class QuadAnimator {
     this.root = this.m.rig;
     this.rigHip = this.m.hip;
     for (const [k, b] of Object.entries(this.m.B)) this.rest0[k] = b.position.clone();
-    this.legs = this.m.legs.map((L) => ({ ...L, off: 0, planted: V(), footPos: V(), liftPos: V(), swing: false, liftS: 0, groundY: 0 }));
+    this.legs = this.m.legs.map((L) => ({ ...L, off: 0, planted: V(), footPos: V(), liftPos: V(), swing: false, liftS: 0, groundY: 0, centre: 0 }));
     const hind = this.legs.find((L) => !L.front)!, fore = this.legs.find((L) => L.front)!;
     this.stance = (Math.abs(hind.neutral.x) + Math.abs(fore.neutral.x)) / 2;
     // The sprawl: how far out the knee stands beyond the hip, against the leg's length.
@@ -216,11 +217,13 @@ export class QuadAnimator {
         if (!L.swing) {
           L.swing = true;
           L.liftPos.copy(L.planted);
+          // Freeze the whole centring offset at lift-off: recomputed from the live speed it drags the landing
+          // spot forward while the body speeds up, so the foot skids as it lands (Brain: dlist E6, audited).
+          L.centre = 0.5 * v * duty * this.cycleT;
         }
         const sw = (q - duty) / (1 - duty), rem = (1 - sw) * (1 - duty) * this.cycleT;
         const yawL = s.yaw + s.yawRate * rem, ym = s.yaw + s.yawRate * rem * 0.5;
-        const centre = 0.5 * v * duty * this.cycleT;
-        const n = L.neutral.clone().multiplyScalar(sz).add(V(0, 0, centre)).applyAxisAngle(UP, yawL);
+        const n = L.neutral.clone().multiplyScalar(sz).add(V(0, 0, L.centre)).applyAxisAngle(UP, yawL);
         const landX = s.x + n.x + Math.sin(ym) * v * rem, landZ = s.z + n.z + Math.cos(ym) * v * rem;
         const e = sw * sw * (3 - 2 * sw);
         L.footPos.x = lerp(L.liftPos.x, landX, e);
