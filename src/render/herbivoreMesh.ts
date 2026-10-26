@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { damp, smooth } from '../sim/math';
 import { heightAt } from '../sim/terrain';
 import type { Herbivore } from '../sim/herbivore';
-import { animateLegs, buildHyperodapedon, type Body } from './creatures';
+import { animateLegs, type Body } from './creatures';
+import { buildKitHyperodapedon } from './kitCreatures';
 
 // Hyperodapedon: procedural rhynchosaur (creatures.ts), animated from the sim state.
 class HerbMesh {
-  readonly b: Body = buildHyperodapedon();
+  readonly b: Body = buildKitHyperodapedon(); // Brain's creature kit; the sweep model is buildHyperodapedon
   readonly root = this.b.root;
   phase = Math.random();
   headUp = 0;

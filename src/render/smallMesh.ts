@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { smooth } from '../sim/math';
 import { heightAt } from '../sim/terrain';
 import { exposed, SMALL, type Grub, type Small, type SmallKind } from '../sim/smallprey';
-import { animateLegs, buildCynodont, type Body } from './creatures';
+import { animateLegs, type Body } from './creatures';
+import { buildKitCynodont } from './kitCreatures';
 
 // Small prey: procedural cynodonts (creatures.ts) built at unit length and scaled to each animal; plus burrow
 // mouths and grub dig sites.
@@ -13,7 +14,7 @@ class SmallMesh {
   px = 0; pz = 0; pyaw = 0;
 
   constructor(kind: SmallKind, size: number) {
-    this.b = buildCynodont(kind);
+    this.b = buildKitCynodont(kind); // Brain's creature kit; the sweep model is buildCynodont
     this.root = new THREE.Group();
     this.b.root.scale.setScalar(SMALL[kind].length * size);
     this.root.add(this.b.root);

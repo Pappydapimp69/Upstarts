@@ -3,15 +3,22 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 // Brain's creature kit (vendored in ./body): one skinned, lofted mesh per animal instead of stacked tubes.
 import { buildBody } from './body/body.js';
 import { saurosuchus } from './body/specs/quadruped.js';
+import { hyperodapedon, exaeretodon, smallCynodont } from './body/specs/basal.js';
 import type { Body, Leg } from './creatures';
 
 // Building a kit body bakes its occlusion and lofts every part, about half a second, so each species is
 // built once (at a lighter detail level) and every animal is a clone sharing its geometry and materials.
 const templates = new Map<string, THREE.Object3D>();
-function instance(spec: { name: string }, lod: number): THREE.Group {
+// unit: scale the template to unit length, for animals the game scales by their own length (the cynodonts).
+function instance(spec: { name: string }, lod: number, unit = 0): THREE.Group {
   let t = templates.get(spec.name);
   if (!t) {
-    t = (buildBody(spec, { lod }) as { root: THREE.Object3D }).root;
+    const built = (buildBody(spec, { lod }) as { root: THREE.Object3D }).root;
+    if (unit) {
+      t = new THREE.Group();
+      built.scale.setScalar(1 / unit);
+      t.add(built);
+    } else t = built;
     templates.set(spec.name, t);
   }
   return cloneSkinned(t) as THREE.Group;
@@ -38,4 +45,19 @@ export function buildKitSaurosuchus(): Body {
     head: 'head', jaw: 'jaw', tail: 'tail1', tail2: 'tail3',
     legs: [['shoulderL', 'elbowL', true, 1], ['shoulderR', 'elbowR', true, -1], ['hipL', 'kneeL', false, 1], ['hipR', 'kneeR', false, -1]],
   });
+}
+
+const LEGS: Rig['legs'] = [['shoulderL', 'elbowL', true, 1], ['shoulderR', 'elbowR', true, -1], ['hipL', 'kneeL', false, 1], ['hipR', 'kneeR', false, -1]];
+
+// Hyperodapedon from the kit's lowQuadruped (specs/basal.js), real size (about 1.6 m). Herds of about 20:
+// the lightest detail level keeps the herd near 60k triangles.
+export function buildKitHyperodapedon(): Body {
+  return adapt(instance(hyperodapedon, 2), { head: 'head', jaw: 'jaw', tail: 'tail1', tail2: 'tail3', legs: LEGS });
+}
+
+// Cynodonts at unit length, as buildCynodont makes them: SmallMeshes scales the root by body length.
+export function buildKitCynodont(kind: 'cynodont' | 'exaeretodon'): Body {
+  const spec = kind === 'exaeretodon' ? exaeretodon : smallCynodont;
+  // Small ones are many and tiny on screen: the lightest detail level, which also drops the fur shells.
+  return adapt(instance(spec, kind === 'exaeretodon' ? 1 : 2, kind === 'exaeretodon' ? 1.666 : 0.32), { head: 'head', jaw: 'jaw', tail: 'tail1', tail2: 'tail3', legs: LEGS });
 }
