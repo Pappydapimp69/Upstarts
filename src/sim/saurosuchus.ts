@@ -202,7 +202,9 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
       // breath back; otherwise it re-targets the next tick and flip-flops between rest and charge.
       const ready = s.state === 'patrol' || (s.stateT > 8 && s.stamina > 0.6);
       if (hungry && ready) {
-        const c = w.carcasses.find((k) => Math.hypot(k.x - s.x, k.z - s.z) < 25 && k.meat > 2);
+        // A carcass it can see nearby, or smell on the wind from further off (a big kill carries far).
+        const c = w.carcasses.find((k) => k.meat > 2 && Math.hypot(k.x - s.homeX, k.z - s.homeZ) < S.territory + 20
+          && (Math.hypot(k.x - s.x, k.z - s.z) < 25 || plume(k.x, k.z, 0.5 + k.meat / 100, s.x, s.z) > S.smell));
         if (c) {
           s.target = c.id;
           set('eat');

@@ -13,6 +13,11 @@ import type { Predator } from './herbivore';
 
 export type SmallKind = 'cynodont' | 'exaeretodon' | 'fish';
 
+// Scavenging (owner: something should compete for a kill): the small cynodonts come out to a carcass near their
+// burrows and nibble at it while nothing is about. One small animal takes little, but a few of them over a few
+// minutes take a real share; guarding the kill (they bolt from anything they sense) keeps them off.
+export const SCAVENGE = { range: 16, rate: 0.05, reach: 0.45 }; // m from the burrow, kg/s each, m
+
 export const SMALL = {
   cynodont: {
     name: 'small cynodont', length: 0.3, hip: 0.07, walk: 0.5, flee: 4.5, turn: 9,
@@ -162,7 +167,10 @@ export function sensesSmall(s: Small, p: Predator, heard: SoundEvent[]): boolean
   return d < seen || d < 2 || !!heardFrom(heard, p.id, s.x, s.z, sp.hears);
 }
 
-export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: number, now: number, heard: SoundEvent[]): void {
+export interface Food { id: number; x: number; z: number; meat: number }
+
+export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: number, now: number, heard: SoundEvent[],
+  food: Food[] = [], eat?: (id: number, kg: number) => void): void {
   const sp = SMALL[s.kind];
   s.stateT += dt;
   s.bleeding = Math.max(0, s.bleeding - dt);
@@ -191,6 +199,8 @@ export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: n
   if (s.state === 'flee' && !fresh && s.stateT > 3) setState(s, 'forage');
 
   let yaw = s.yaw, target = 0;
+  const carrion = s.state === 'forage' && s.kind === 'cynodont'
+    ? food.find((c) => c.meat > 1 && Math.hypot(c.x - s.homeX, c.z - s.homeZ) < SCAVENGE.range) : undefined;
   if (s.state === 'flee') {
     const toHome = Math.hypot(s.homeX - s.x, s.homeZ - s.z);
     if (s.kind === 'cynodont') {
@@ -213,6 +223,12 @@ export function stepSmall(s: Small, preds: Predator[], rand: () => number, dt: n
       yaw = Math.atan2(s.x - s.threatX, s.z - s.threatZ);
       target = (s.mass < SMALL.exaeretodon.adult ? 0.85 : 1) * sp.flee * (s.stateT > 6 ? 0.6 : 1);
     }
+  } else if (carrion) {
+    // A carcass near the burrow: go to it and nibble.
+    const d = Math.hypot(carrion.x - s.x, carrion.z - s.z);
+    yaw = Math.atan2(carrion.x - s.x, carrion.z - s.z);
+    if (d > SCAVENGE.reach) target = sp.walk * 2;
+    else eat?.(carrion.id, SCAVENGE.rate * dt);
   } else {
     // Forage: potter about near home, stopping often.
     if (s.stateT > 2 + rand() * 4) {

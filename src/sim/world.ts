@@ -714,6 +714,40 @@ function stepStrike(w: World, slot: PlayerSlot, dt: number): void {
   if (k.t >= S.dur) d.strike = null;
 }
 
+// Bodies don't pass through each other: each animal is a circle about its trunk (a long body's head and tail stick
+// out past it) and overlapping ones are pushed apart, the lighter one further. Not into deep water or a rock face.
+// Something held in the jaws is left where it's held. Small cynodonts are too small to bother with.
+export const BODY_R = { player: 0.11, herb: 0.29, sauro: 0.45, exaeretodon: 0.15 }; // x length for the player and Exaeretodon, m otherwise
+function separateBodies(w: World): void {
+  type B = { o: { x: number; z: number }; r: number; m: number; id: number; hip: number; player?: Dino };
+  const bs: B[] = [];
+  for (const s of w.players) {
+    const d = s.dino;
+    if (d.alive && d.egg === 0) bs.push({ o: d, r: BODY_R.player * d.species.length * d.body.size, m: d.body.mass, id: s.entity, hip: d.body.hip, player: d });
+  }
+  for (const h of w.herbivores) if (h.state !== 'dead') bs.push({ o: h, r: BODY_R.herb, m: HYPERODAPEDON.mass, id: h.id, hip: HYPERODAPEDON.hip });
+  for (const s of w.sauros) if (s.state !== 'dead') bs.push({ o: s, r: BODY_R.sauro, m: SAUROSUCHUS.mass, id: s.id, hip: SAUROSUCHUS.hip });
+  for (const m of w.smalls) if (m.kind === 'exaeretodon' && exposed(m)) bs.push({ o: m, r: BODY_R.exaeretodon * smallLen(m), m: m.mass, id: m.id, hip: smallHip(m) });
+  const held = new Set(w.players.filter((s) => s.dino.grip >= 0).map((s) => `${s.entity}:${s.dino.grip}`));
+  const move = (b: B, dx: number, dz: number): void => {
+    const nx = b.o.x + dx, nz = b.o.z + dz;
+    if (waterDepthAt(nx, nz) >= TOO_DEEP) return;
+    [b.o.x, b.o.z] = pushOutOfRocks(nx, nz, b.r, b.hip);
+    if (b.player && !b.player.jump) b.player.y = groundAt(b.o.x, b.o.z);
+  };
+  for (let i = 0; i < bs.length; i++) {
+    for (let j = i + 1; j < bs.length; j++) {
+      const a = bs[i], b = bs[j];
+      if (held.has(`${a.id}:${b.id}`) || held.has(`${b.id}:${a.id}`)) continue;
+      const dx = b.o.x - a.o.x, dz = b.o.z - a.o.z, d = Math.hypot(dx, dz), over = a.r + b.r - d;
+      if (over <= 0 || d < 1e-6) continue;
+      const ux = dx / d, uz = dz / d, ka = b.m / (a.m + b.m);
+      move(a, -ux * over * ka, -uz * over * ka);
+      move(b, ux * over * (1 - ka), uz * over * (1 - ka));
+    }
+  }
+}
+
 // A player bleeds for a while after being bitten (as long as a bitten animal does).
 const bleeding = (d: Dino): boolean => d.alive && d.hitT < BITE.bleed;
 
@@ -1012,7 +1046,10 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     footfalls(w, h, h.id, h.x, h.z, HYPERODAPEDON.mass, h.speed, 0.9, 4, dt);
   }
   for (const m of w.smalls) {
-    stepSmall(m, preds, w.rng.prey, dt, now, heard);
+    stepSmall(m, preds, w.rng.prey, dt, now, heard, w.carcasses, (id, kg) => {
+      const c = w.carcasses.find((k) => k.id === id);
+      if (c) c.meat = Math.max(0, c.meat - kg);
+    });
     if (m.kind === 'exaeretodon' && exposed(m)) footfalls(w, m, m.id, m.x, m.z, m.mass, m.speed, 0.7 * Math.cbrt(m.mass / 50), 4, dt);
     if (m.state === 'gone' && m.stateT > SMALL[m.kind].respawn) respawnSmall(m, w.rng.prey);
   }
@@ -1037,6 +1074,8 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
       }
     } else if (there < 6) pickGoal(w, herd);
   }
+
+  separateBodies(w);
 
   // Trails: scent from everything on the move, blood from anything bleeding (you too, for a while after a bite).
   const layers: TrailLayer[] = [];
