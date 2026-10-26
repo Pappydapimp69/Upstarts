@@ -13,14 +13,15 @@ const secs = (w: World, s: number, cmd: Command | ((w: World) => Command) = idle
   for (let i = 0; i < s * TICK_HZ; i++) step(w, typeof cmd === 'function' ? cmd(w) : cmd);
 };
 
-// Open ground with just the player and one Saurosuchus.
+// Open ground with just the player and one Saurosuchus. x = -4: a lane with no trunk between them (a Dicroidium
+// grove grew across the old one at x = -10).
 function arena(growth: number, gap: number, hungry = true): World {
   const w = createWorld(5, 1, growth);
   w.herbivores = [];
   w.carcasses = [];
-  w.player = createDino(HERRERASAURUS, -10, 20, Math.PI, growth);
-  const s = createSauro(500, -10, 20 + gap);
-  s.homeX = -10;
+  w.player = createDino(HERRERASAURUS, -4, 20, Math.PI, growth);
+  const s = createSauro(500, -4, 20 + gap);
+  s.homeX = -4;
   s.homeZ = 20;
   s.yaw = Math.PI;
   if (!hungry) s.lastMeal = 1e9;
@@ -177,7 +178,7 @@ describe('Saurosuchus', () => {
   it('leaves a big carcass when killed, and another moves in later', () => {
     const w = arena(1, 30, false);
     w.sauros[0].health = 0.01;
-    w.player.x = -10;
+    w.player.x = -4;
     w.player.z = 20 + 30 - 3.2;
     w.player.yaw = 0;
     secs(w, 2, { ...idle, eat: true });

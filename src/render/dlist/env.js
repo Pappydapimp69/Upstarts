@@ -323,6 +323,78 @@ function scatter(scene, geo, mat, list, { shadow = true } = {}) {
   return im;
 }
 
+// The understory (owner: the valley needs more vegetation). Ischigualasto's flora, no grass yet: low ferns filling
+// the gaps, Dicroidium seed-fern shrubs round the groves, and squat cycad-like plants. Scenery only: no collision, and none of it casts shadows (phones: render-only plants
+// are where the triangle budget goes, docs/PERF.md).
+function buildUnderstory(scene, fernMat, nearSpawn) {
+  const R = rng(20261026);
+  const ok = (x, z, pad = 0.3) => {
+    const h = heightAt(x, z);
+    return h > WATER_Y + 0.1 && Math.hypot(x, z) < 88 && !nearSpawn(x, z, 3.5) && groundAt(x, z) <= h + 0.05
+      && !MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.2)
+      && !TREES.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + pad);
+  };
+  const ring = (rMin, rMax) => { const a = R() * Math.PI * 2, r = Math.sqrt(lerp(rMin * rMin, rMax * rMax, R())); return [Math.cos(a) * r, Math.sin(a) * r]; };
+  const near = (o, d0, d1) => { const a = R() * Math.PI * 2, d = lerp(d0, d1, R()); return [o.x + Math.cos(a) * d, o.z + Math.sin(a) * d]; };
+
+  // Low ferns: small and few-fronded, in the gaps between the big clumps and thickest under the trees.
+  const small = fernGeometry(rng(16), 5, 0.35, 0.6, new THREE.Color('#3f5a26'), new THREE.Color('#7f9446'), 0.7, 0.8, 0.2);
+  const lf = [];
+  for (let i = 0; i < 9000 && lf.length < 2400; i++) {
+    const t = R() < 0.35 ? TREES[(R() * TREES.length) | 0] : null;
+    const [x, z] = t ? near(t, 1, 6) : ring(3, 86);
+    if (!ok(x, z) || R() > 0.3 + 0.7 * fbm(x * 0.13, z * 0.13, 83) + (t ? 0.3 : 0)) continue;
+    lf.push({ x, y: heightAt(x, z) - 0.02, z, s: lerp(0.6, 1.3, R()), ry: R() * 6.28 });
+  }
+  scatter(scene, small, fernMat, lf, { shadow: false });
+
+  // Dicroidium shrubs: the same forked fronds as the trees, as waist-high bushes round the groves.
+  const sPos = [], sCol = [], sr = rng(17);
+  for (let f = 0; f < 10; f++) {
+    const ang = (f / 10) * Math.PI * 2 + sr() * 0.5;
+    frondTriangles(sPos, sCol, V((sr() - 0.5) * 0.25, 0.05 + sr() * 0.3, (sr() - 0.5) * 0.25), V(Math.cos(ang), 0, Math.sin(ang)),
+      lerp(0.8, 1.3, sr()), 0.9 + sr() * 0.4, 1.4, 0.14, new THREE.Color('#495b25'), new THREE.Color('#93964a'));
+  }
+  const shrub = new THREE.BufferGeometry();
+  shrub.setAttribute('position', new THREE.Float32BufferAttribute(sPos, 3));
+  shrub.setAttribute('color', new THREE.Float32BufferAttribute(sCol, 3));
+  shrub.computeVertexNormals();
+  const dTrees = TREES.filter((t) => t.kind === 'dicroidium');
+  const sl = [];
+  for (let i = 0; i < 1500 && sl.length < 170; i++) {
+    const [x, z] = R() < 0.7 ? near(dTrees[(R() * dTrees.length) | 0], 1.5, 8) : ring(6, 80);
+    if (!ok(x, z, 0.6) || sl.some((o) => Math.hypot(o.x - x, o.z - z) < 1.2)) continue;
+    sl.push({ x, y: heightAt(x, z) - 0.05, z, s: lerp(0.6, 1.2, R()), ry: R() * 6.28 });
+  }
+  scatter(scene, shrub, fernMat, sl, { shadow: false });
+
+  // Cycad-like plants: a squat scaly trunk under a crown of stiff, straight fronds.
+  const cPos = [], cCol = [], cy = rng(18);
+  for (let f = 0; f < 14; f++) {
+    const ang = (f / 14) * Math.PI * 2 + cy() * 0.3;
+    frondTriangles(cPos, cCol, V(0, 0.62, 0), V(Math.cos(ang), 0, Math.sin(ang)), lerp(0.7, 1.0, cy()), 0.55 + cy() * 0.35, 0.55, 0.1,
+      new THREE.Color('#2f4a22'), new THREE.Color('#5d7333'));
+  }
+  const crown = new THREE.BufferGeometry();
+  crown.setAttribute('position', new THREE.Float32BufferAttribute(cPos, 3));
+  crown.setAttribute('color', new THREE.Float32BufferAttribute(cCol, 3));
+  crown.computeVertexNormals();
+  const trunk = mergeColored([
+    { geo: new THREE.CylinderGeometry(0.15, 0.2, 0.65, 8), color: (x, y) => new THREE.Color('#5a4630').multiplyScalar(0.75 + 0.35 * ((Math.floor(y * 22) % 2) ? 1 : 0)), matrix: M4().makeTranslation(0, 0.32, 0) },
+  ]);
+  const cl = [];
+  for (let i = 0; i < 1200 && cl.length < 80; i++) {
+    const [x, z] = ring(6, 82);
+    if (!ok(x, z, 1) || cl.some((o) => Math.hypot(o.x - x, o.z - z) < 2)) continue;
+    cl.push({ x, y: heightAt(x, z) - 0.04, z, s: lerp(0.7, 1.4, R()), ry: R() * 6.28 });
+  }
+  scatter(scene, trunk, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.4 }), cl, { shadow: false });
+  const cMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide, envMapIntensity: 0.5 });
+  addWind(cMat, 0.02, 'cycad');
+  scatter(scene, crown, cMat, cl, { shadow: false });
+
+}
+
 export function buildPlants(scene) {
   const R = rng(20251021);
   const ringPoint = (rMin, rMax) => { const a = R() * Math.PI * 2, r = Math.sqrt(lerp(rMin * rMin, rMax * rMax, R())); return [Math.cos(a) * r, Math.sin(a) * r]; };
@@ -364,6 +436,16 @@ export function buildPlants(scene) {
     if (h < WATER_Y - 0.3 || nearSpawn(x, z, 5)) continue;
     hl.push({ x, y: h - 0.05, z, s: lerp(0.75, 1.3, R()), ry: R() * 6.28 });
   }
+  // More (owner: more vegetation): thicker reed beds round the pond and the wet edge of the mud pit. Their own
+  // stream, so everything placed from R after this stays where it was.
+  const HR = rng(31);
+  for (let i = 0; i < 900 && hl.length < 210; i++) {
+    const W = HR() < 0.75 ? PONDS[(HR() * PONDS.length) | 0] : MUDS[0], a = HR() * 6.28, d = lerp(W.r - 1.5, W.r + 4.5, HR());
+    const x = W.x + Math.cos(a) * d, z = W.z + Math.sin(a) * d;
+    const h = heightAt(x, z);
+    if (h < WATER_Y - 0.3 || nearSpawn(x, z, 5) || groundAt(x, z) > h + 0.05 || hl.some((o) => Math.hypot(o.x - x, o.z - z) < 0.5)) continue;
+    hl.push({ x, y: h - 0.05, z, s: lerp(0.6, 1.25, HR()), ry: HR() * 6.28 });
+  }
   scatter(scene, horsetailGeo, hMat, hl);
 
   // Conifers.
@@ -402,6 +484,8 @@ export function buildPlants(scene) {
   const crownMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, side: THREE.DoubleSide, envMapIntensity: 0.5 });
   addWind(crownMat, 0.012, 'crown');
   scatter(scene, crown, crownMat, dl);
+
+  buildUnderstory(scene, fernMat, nearSpawn);
 
   // Pebbles: scenery only, too small to matter underfoot. The rocks and logs that are footing come from the sim
   // (sim/ground.ts, drawn by render/rocks.ts).

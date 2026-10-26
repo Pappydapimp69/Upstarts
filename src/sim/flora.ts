@@ -14,6 +14,7 @@ export interface Tree {
   s: number; // scale
   ry: number;
   r: number; // trunk collision radius, m
+  extra?: boolean; // added later: the rocks were laid out without it, and it gives way to them (ground.ts)
 }
 
 function clearOf(x: number, z: number, pad: number): boolean {
@@ -46,6 +47,27 @@ function build(): Tree[] {
     if (!clearOf(x, z, 3.5) || out.some((o) => Math.hypot(o.x - x, o.z - z) < 4)) continue;
     const s = lerp(0.85, 1.3, R());
     out.push({ kind: 'dicroidium', x, z, y: heightAt(x, z) - 0.1, s, ry: R() * 6.28, r: 0.2 * s + 0.1 });
+    n++;
+  }
+  // More (owner: the valley needs more vegetation), drawn from the same stream after the originals so those stay
+  // where they were: a belt of conifers round the rim of the valley, and Dicroidium in small groves, as it grew in
+  // stands along the Ischigualasto floodplain.
+  n = 0;
+  for (let i = 0; i < 800 && n < 34; i++) {
+    const [x, z] = ring(74, 88);
+    if (!clearOf(x, z, 6) || out.some((o) => Math.hypot(o.x - x, o.z - z) < 4.5)) continue;
+    const s = lerp(0.75, 1.3, R());
+    out.push({ kind: 'conifer', x, z, y: heightAt(x, z) - 0.2, s, ry: R() * 6.28, r: 0.42 * s + 0.1, extra: true });
+    n++;
+  }
+  n = 0;
+  const groves = out.filter((o) => o.kind === 'dicroidium');
+  for (let i = 0; i < 800 && n < 18; i++) {
+    const g = groves[i % groves.length];
+    const a = R() * Math.PI * 2, d = lerp(3.5, 7, R()), x = g.x + Math.cos(a) * d, z = g.z + Math.sin(a) * d;
+    if (Math.hypot(x, z) > 60 || !clearOf(x, z, 3.5) || out.some((o) => Math.hypot(o.x - x, o.z - z) < 3.5)) continue;
+    const s = lerp(0.7, 1.15, R());
+    out.push({ kind: 'dicroidium', x, z, y: heightAt(x, z) - 0.1, s, ry: R() * 6.28, r: 0.2 * s + 0.1, extra: true });
     n++;
   }
   return out;

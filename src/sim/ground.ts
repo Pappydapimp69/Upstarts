@@ -70,7 +70,7 @@ function build(): Rock[] {
     !PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + 2 + pad)
     && !MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1 + pad)
     && !SPAWNS.some((p) => Math.hypot(x - p.x, z - p.z) < 5 + pad)
-    && !TREES.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + 1 + pad)
+    && !TREES.some((t) => !t.extra && Math.hypot(x - t.x, z - t.z) < t.r + 1 + pad)
     && !out.some((o) => Math.hypot(x - o.x, z - o.z) < o.r + 0.6 + pad);
   const rock = (x: number, z: number, rx: number, rz: number, h: number, o: { k?: number; flat?: boolean; tilt?: number; sink?: number } = {}): void => {
     const g = heightAt(x, z), sink = o.sink ?? 0.25 * h, top = g + h, tilt = o.tilt ?? (o.flat ? 0.06 : 0.15);
@@ -123,6 +123,11 @@ function build(): Rock[] {
 }
 
 export const ROCKS: Rock[] = build();
+// Trees added after the rocks were laid out (flora.ts `extra`) give way to them, so the rock layout stays as it was.
+for (let i = TREES.length - 1; i >= 0; i--) {
+  const t = TREES[i];
+  if (t.extra && ROCKS.some((r) => Math.hypot(r.x - t.x, r.z - t.z) < r.r + t.r + 0.8)) TREES.splice(i, 1);
+}
 
 // A coarse grid, so a ground query only looks at the rocks near it.
 const CELL = 6;
