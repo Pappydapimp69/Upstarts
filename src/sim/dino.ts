@@ -113,7 +113,7 @@ export const STAMINA = { sprint: -0.02, walk: 0.0275, rest: 0.3 };
 export function createDino(species: Species, x: number, z: number, yaw: number, growth = 1): Dino {
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: groundAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
-    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, trail: null, egg: 0,
+    needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 99, callT: 9, callDur: 0, gait: 0, sniff: null, trail: null, egg: 0,
     jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null, swim: 0, under: 0, chill: 0, lungeT: 9, grip: -1, strike: null, strikeT: 9, hidden: 0,
   };
 }

@@ -86,3 +86,11 @@ describe('Saurosuchus on a blood trail', () => {
     expect(off.tracking).toBe(false);
   });
 });
+
+describe('a new hatchling', () => {
+  it("doesn't bleed (it hasn't been bitten)", () => {
+    const w = createWorld(4, 1, 0);
+    for (let i = 0; i < 3 * TICK_HZ; i++) step(w, { moveX: 0, moveZ: 1, sprint: 0 });
+    expect(w.trails.marks.some((m) => m.kind === 'blood' && m.who === w.players[0].entity)).toBe(false);
+  });
+});

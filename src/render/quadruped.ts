@@ -3,7 +3,7 @@ import { clamp, damp, lerp, smooth } from '../sim/math';
 import { groundAt } from '../sim/ground';
 import { WATER_Y } from '../sim/terrain';
 import { COAT, type Coat } from '../sim/coat';
-import { buildQuadModel, QUAD_SPECS, reptileU } from './dlist/quadModel.js';
+import { buildQuadModel, NPC_SPECS, QUAD_SPECS } from './dlist/quadModel.js';
 
 // Four-legged players (Proterochampsa, Aetosauroides): one lofted, skinned body over a bone chain (dlist/quadModel.js),
 // animated the way the Herrerasaurus is (dlist/E2-E6): gait clock on the Froude number, stride from Alexander's
@@ -33,7 +33,8 @@ interface QLeg extends LegRig {
   centre: number; // stance-centring offset, frozen at lift-off (Brain: dlist E6)
 }
 interface QuadModel {
-  rig: THREE.Group; B: Record<string, Bone>; bodyMesh: THREE.SkinnedMesh; legs: LegRig[]; tails: Bone[]; hip: number; bodyVEnd: number;
+  rig: THREE.Group; B: Record<string, Bone>; bodyMesh: THREE.SkinnedMesh; legs: LegRig[];
+  u: Record<'qWet' | 'qMud' | 'qDry' | 'qFlake', { value: Float32Array }> & Record<'qBandH' | 'qLive', { value: number }>; tails: Bone[]; hip: number; bodyVEnd: number;
 }
 interface QuadSpec { J: Record<string, THREE.Vector3>; hind: { hip: number[] }; fore: { hip: number[] } }
 
@@ -73,7 +74,7 @@ export class QuadAnimator {
   readonly root: THREE.Group;
   readonly rigHip: number;
   readonly speciesId: string;
-  onStep: ((foot: THREE.Vector3, side: number) => void) | null = null;
+  onStep: ((foot: THREE.Vector3, side: number, front: boolean) => void) | null = null;
   onSound: ((kind: 'lap' | 'drip' | 'gulp' | 'sniff' | 'tear' | 'thud', at: THREE.Vector3) => void) | null = null;
   private readonly m: QuadModel;
   private readonly legs: QLeg[];
@@ -103,7 +104,8 @@ export class QuadAnimator {
 
   constructor(speciesId: string) {
     this.speciesId = speciesId;
-    const spec = (QUAD_SPECS as unknown as Record<string, QuadSpec>)[speciesId];
+    // A player species, or one of the valley's other animals (Saurosuchus, Hyperodapedon).
+    const spec = ({ ...QUAD_SPECS, ...NPC_SPECS } as unknown as Record<string, QuadSpec>)[speciesId];
     this.m = buildQuadModel(spec) as unknown as QuadModel;
     this.J = spec.J;
     this.root = this.m.rig;
@@ -144,12 +146,13 @@ export class QuadAnimator {
 
   // The coat (wet and mud bands) on this body. The shader bands are bind-pose heights: fractions of the rig's hip.
   setCoat(c: Coat, _hip: number, alive: boolean): void {
-    reptileU.qWet.value.set(c.wet);
-    reptileU.qMud.value.set(c.mud);
-    reptileU.qDry.value.set(c.dry);
-    reptileU.qFlake.value.set(c.flake);
-    reptileU.qBandH.value = COAT.band * this.rigHip;
-    reptileU.qLive.value = alive ? 1 : 0;
+    const u = this.m.u;
+    u.qWet.value.set(c.wet);
+    u.qMud.value.set(c.mud);
+    u.qDry.value.set(c.dry);
+    u.qFlake.value.set(c.flake);
+    u.qBandH.value = COAT.band * this.rigHip;
+    u.qLive.value = alive ? 1 : 0;
   }
 
   // A point on the body surface at about height h (world metres) above the ground, for drips and flakes.
@@ -209,7 +212,7 @@ export class QuadAnimator {
           if (L.swing) {
             L.planted.copy(L.footPos);
             L.planted.y = groundAt(L.planted.x, L.planted.z);
-            this.onStep?.(L.planted, L.sx);
+            this.onStep?.(L.planted, L.sx, L.front);
           }
           L.swing = false;
           L.footPos.copy(L.planted);
