@@ -45,25 +45,25 @@ function make(o: Omit<Species, 'walk' | 'sprintMin' | 'sprintMax' | 'leg' | 'rea
 
 export const HERRERASAURUS: Species = make({
   id: 'herrerasaurus', name: 'Herrerasaurus', length: 5.2, hip: 1.15, mass: 350, diet: 'carnivore', biteMult: 1, build: 1,
-  hatchSize: 0.22, toAdult: 2.5 * 3600,
+  hatchSize: 0.22, toAdult: 5 * 3600,
   blurb: 'The biggest dinosaur predator in the valley. A strong bite, but it still loses one-on-one to an adult Saurosuchus.',
 });
 
 export const EODROMAEUS: Species = make({
   id: 'eodromaeus', name: 'Eodromaeus', length: 1.2, hip: 0.33, mass: 5, diet: 'carnivore', biteMult: 0.9, build: 0.9,
-  hatchSize: 0.35, toAdult: 1.2 * 3600,
+  hatchSize: 0.35, toAdult: 2.5 * 3600,
   blurb: 'Small and fragile. Scavenges and snaps up what it can, and survives by staying beneath notice.',
 });
 
 export const PANPHAGIA: Species = make({
   id: 'panphagia', name: 'Panphagia', length: 1.6, hip: 0.38, mass: 10, diet: 'omnivore', biteMult: 0.6, build: 1, neck: 1.4,
-  hatchSize: 0.33, toAdult: 1.5 * 3600,
+  hatchSize: 0.33, toAdult: 3 * 3600,
   blurb: 'An early long-necked plant eater that still takes meat. Browses ferns, so it rarely goes hungry: the easy start.',
 });
 
 export const SANJUANSAURUS: Species = make({
   id: 'sanjuansaurus', name: 'Sanjuansaurus', length: 3.0, hip: 0.68, mass: 60, diet: 'carnivore', biteMult: 1.1, build: 1.05,
-  hatchSize: 0.27, toAdult: 2 * 3600,
+  hatchSize: 0.27, toAdult: 4 * 3600,
   blurb: 'A mid-sized cousin of Herrerasaurus. Big enough to take Hyperodapedon, small enough to stay off Saurosuchus\'s menu for a while.',
 });
 

@@ -54,6 +54,7 @@ export class FollowCamera {
       respawn: inp.confirm,
       jump: inp.confirm,
       rest: inp.rest,
+      nest: inp.nest,
       call: inp.call ?? undefined,
     };
   }

@@ -1,6 +1,9 @@
 // HUD and menus in the Dlist demo's field-specimen style (index.html holds the markup and CSS).
 import type { Dino } from '../sim/dino';
-import { EGG, TICK_DT, type World } from '../sim/world';
+import { EGG, nestBlock, nestFor, TICK_DT, type World } from '../sim/world';
+import { balance, lowest, DIET, type Nutrient } from '../sim/diet';
+import { INJURY } from '../sim/injury';
+import { NEST } from '../sim/nest';
 import { CLOCK, dayTime } from '../sim/clock';
 import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
@@ -9,12 +12,12 @@ import { onDevice, pressConfirm, state as inputState, type Device } from '../inp
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
 const KEY = 'upstarts.records';
-interface Records { longestLife: number; lives: number; largest: number }
+interface Records { longestLife: number; lives: number; largest: number; generation: number }
 function loadRecords(): Records {
   try {
-    return { longestLife: 0, lives: 0, largest: 0, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    return { longestLife: 0, lives: 0, largest: 0, generation: 1, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
   } catch {
-    return { longestLife: 0, lives: 0, largest: 0 };
+    return { longestLife: 0, lives: 0, largest: 0, generation: 1 };
   }
 }
 function saveRecords(r: Records): void {
@@ -46,17 +49,18 @@ const PICK_KEY = 'upstarts.species';
 
 const KEYS: Record<Device, [string, string][]> = {
   pad: [['Move', 'Left stick'], ['Camera', 'Right stick'], ['Sprint', 'Right trigger (hold)'], ['Drink / sniff', 'B (hold)'],
-    ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'Left trigger (hold)'], ['Roar', 'Y'], ['Calls', 'Click right stick'], ['Camera behind', 'Click left stick'], ['Menu', 'Start']],
+    ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'Left trigger (hold)'], ['Nest', 'D-pad down (hold)'], ['Roar', 'Y'], ['Calls', 'Click right stick'], ['Camera behind', 'Click left stick'], ['Menu', 'Start']],
   keys: [['Move', 'W A S D'], ['Camera', 'Drag the mouse'], ['Sprint', 'Shift (hold)'], ['Drink / sniff', 'G (hold)'],
-    ['Eat / bite', 'E or F (hold)'], ['Jump', 'Space'], ['Rest', 'Z (hold)'], ['Roar', 'R'], ['Calls', 'Hold R, or 1 to 6'], ['Camera behind', 'C'], ['Menu', 'Esc']],
+    ['Eat / bite', 'E or F (hold)'], ['Jump', 'Space'], ['Rest', 'Z (hold)'], ['Nest', 'N (hold)'], ['Roar', 'R'], ['Calls', 'Hold R, or 1 to 6'], ['Camera behind', 'C'], ['Menu', 'Esc']],
   touch: [['Move', 'Left thumb (push to the edge to sprint)'], ['Camera', 'Drag on the right'], ['Drink / sniff', 'B (hold)'],
-    ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'LT (hold)'], ['Roar', 'Y'], ['Calls', 'Hold Y'], ['Camera behind', '\u21BA'], ['Menu', '\u2630']],
+    ['Eat / bite', 'X (hold)'], ['Jump', 'A'], ['Rest', 'LT (hold)'], ['Nest', '\u25C9 (hold)'], ['Roar', 'Y'], ['Calls', 'Hold Y'], ['Camera behind', '\u21BA'], ['Menu', '\u2630']],
 };
-const BTN: Record<Device, { drink: string; eat: string; go: string }> = {
-  pad: { drink: 'B', eat: 'X', go: 'A' },
-  keys: { drink: 'G', eat: 'E', go: 'Enter' },
-  touch: { drink: 'B', eat: 'X', go: 'tap' },
+const BTN: Record<Device, { drink: string; eat: string; go: string; nest: string }> = {
+  pad: { drink: 'B', eat: 'X', go: 'A', nest: 'D-pad down' },
+  keys: { drink: 'G', eat: 'E', go: 'Enter', nest: 'N' },
+  touch: { drink: 'B', eat: 'X', go: 'tap', nest: '\u25C9' },
 };
+const NUTRIENT: Record<Nutrient, string> = { protein: 'protein', lipid: 'fats', carb: 'carbs' };
 
 function word(v: number, words: [number, string][]): string {
   for (const [t, w] of words) if (v >= t) return w;
@@ -90,7 +94,7 @@ export class Ui {
         const sp = SPECIES[k];
         return `<button type="button" class="sp" data-sp="${k}" role="option"><span class="sname">${sp.name}</span>
           <span class="ssize">${sp.length} m · ${sp.mass} kg · ${sp.diet === 'omnivore' ? 'plants and meat' : 'meat'}</span>
-          <span class="sdesc">${sp.blurb}</span></button>`;
+          <span class="sdesc">${sp.blurb}</span><span class="snest" data-nest="${k}"></span></button>`;
       }).join('');
       this.el(id).querySelectorAll<HTMLElement>('.sp').forEach((b) => b.addEventListener('click', () => this.pick(b.dataset.sp as SpeciesId)));
     }
@@ -149,10 +153,11 @@ export class Ui {
 
     const stage = stageOf(d.growth);
     document.querySelector('.binomial')!.textContent = BINOMIAL[d.species.id];
-    this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))} · Ischigualasto, about 231 million years ago`;
+    this.el('meta').textContent = `${cap(stage)}${d.generation > 1 ? ` · generation ${d.generation}` : ''} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))} · Ischigualasto, about 231 million years ago`;
 
     const n = d.needs;
-    const v: Record<string, number> = { health: n.health, hunger: n.hunger, thirst: n.thirst, stamina: d.stamina, growth: d.growth };
+    const diet = balance(d.nutrients, d.species.diet);
+    const v: Record<string, number> = { health: n.health, hunger: n.hunger, thirst: n.thirst, stamina: d.stamina, growth: d.growth, diet };
     for (const [k, el] of this.bars) {
       el.style.width = `${(v[k] * 100).toFixed(1)}%`;
       el.parentElement!.classList.toggle('low', k !== 'growth' && v[k] < 0.25);
@@ -163,6 +168,7 @@ export class Ui {
       thirst: word(n.thirst, [[0.8, 'Watered'], [0.5, 'Thirsty'], [0.2, 'Parched'], [0, 'Dehydrated']]),
       stamina: word(d.stamina, [[0.8, 'Fresh'], [0.5, 'Winded'], [0.2, 'Tired'], [0, 'Spent']]),
       growth: `${cap(stage)} ${Math.round(d.growth * 100)}%`,
+      diet: diet >= DIET.goodAbove ? 'Balanced' : `Short of ${NUTRIENT[lowest(d.nutrients, d.species.diet)]}`,
     };
     for (const [k, el] of this.vals) el.textContent = txt[k];
     const sp = d.speed;
@@ -171,11 +177,23 @@ export class Ui {
       : d.resting ? (d.stamina < 0.995 ? 'Lying down, resting' : 'Lying down, rested') : d.rest > 0.05 ? 'Getting up'
       : sp < 0.15 ? 'Standing' : `${sp < 0.68 * d.body.sprintMax ? (sp < 1.6 * d.body.size ** 0.5 ? 'Walking' : 'Running') : 'Sprinting'} · ${sp.toFixed(1)} m/s`;
 
-    const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs' : d.act === 'bite' ? 'Biting'
+    // Injuries: what's wrong with the body, if anything.
+    const hurts = [
+      d.bleed > 0 ? (d.bleed > 0.5 ? 'Bleeding badly' : 'Bleeding') : '',
+      d.broken > 0 ? `Broken leg, ${Math.round((1 - d.broken) * 100)}% mended` : n.health < INJURY.limp ? 'Limping' : '',
+    ].filter(Boolean);
+    const bodyEl = this.el('body');
+    bodyEl.textContent = !d.alive ? '—' : hurts.length ? hurts.join(' · ') : 'Sound';
+    bodyEl.classList.toggle('hurt', hurts.length > 0);
+
+    const slot = w.players[0];
+    const canNest = d.alive && d.egg === 0 && !nestBlock(w, slot);
+    const hint = d.act === 'nest' ? `Scraping a nest · ${Math.min(100, Math.round((d.nestT / NEST.build) * 100))}%` : d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs' : d.act === 'bite' ? 'Biting'
       : d.act === 'turn' || d.act === 'shuffle' ? 'Heading for the water'
       : d.act === 'sniff' ? (d.sniff ? (d.sniff.strength > 0.5 ? 'Strong scent on the wind' : 'Faint scent on the wind') : 'Nothing on the wind')
       : near.prey ? `Hold <b>${btn.eat}</b> to bite` : near.water ? `Hold <b>${btn.drink}</b> to drink`
-      : near.food ? `Hold <b>${btn.eat}</b> to eat` : near.browse ? `Hold <b>${btn.eat}</b> to browse the ferns` : '';
+      : near.food ? `Hold <b>${btn.eat}</b> to eat` : near.browse ? `Hold <b>${btn.eat}</b> to browse the ferns`
+      : canNest ? `Hold <b>${btn.nest}</b> to scrape a nest and lay ${NEST.clutch[d.species.id]} eggs` : '';
     const tear = `Press <b>${btn.go === 'tap' ? 'A' : btn.go}</b> again and again to tear free of the egg · ${EGG.presses - d.egg} of ${EGG.presses}`;
     this.el('prompt').innerHTML = !d.alive ? '' : d.egg > 0 ? tear : hint;
 
@@ -197,15 +215,24 @@ export class Ui {
       this.records.longestLife = Math.max(this.records.longestLife, L.age);
       this.records.largest = Math.max(this.records.largest, L.growth);
       this.records.lives++;
+      this.records.generation = Math.max(this.records.generation, d.generation);
       saveRecords(this.records);
-      this.el('deathTitle').textContent = L.cause === 'Saurosuchus' ? 'Killed by Saurosuchus' : `Died of ${L.cause}`;
+      this.el('deathTitle').textContent = L.cause === 'Saurosuchus' ? 'Killed by Saurosuchus' : L.cause === 'bleeding' ? 'Bled to death' : `Died of ${L.cause}`;
       this.el('deathStats').innerHTML = [
         ['Lived', `${fmt(L.age)}${best ? ' · new record' : ''}`],
         ['Reached', `${cap(stageOf(L.growth))} ${d.species.name} (${Math.round(L.growth * 100)}%)`],
+        ['Generation', `${d.generation}${d.generation > 1 ? ' of its line' : ''} · best ${this.records.generation}`],
         ['Longest life', fmt(this.records.longestLife)],
         ['Lives', String(this.records.lives)],
       ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
     }
     this.el('death').hidden = d.alive;
+    // On the death card each species shows whether a nest is waiting for it.
+    if (!d.alive) {
+      document.querySelectorAll<HTMLElement>('#pickDeath [data-nest]').forEach((e) => {
+        const nest = nestFor(w, 0, e.dataset.nest as SpeciesId);
+        e.textContent = nest ? `Hatches in ${nest.owner === 0 ? 'your' : 'a'} nest · ${nest.eggs} egg${nest.eggs > 1 ? 's' : ''} · generation ${nest.generation + 1}` : '';
+      });
+    }
   }
 }

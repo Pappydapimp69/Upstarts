@@ -8,7 +8,7 @@ import { fernCut } from './render/dlist/env.js';
 import { dayTime } from './sim/clock';
 import { isSprinting, type Command } from './sim/dino';
 import { FollowCamera } from './render/camera';
-import { CarcassMeshes } from './render/worldMeshes';
+import { BloodMeshes, CarcassMeshes, NestMeshes } from './render/worldMeshes';
 import { Ui } from './render/ui';
 import { HerbivoreMeshes } from './render/herbivoreMesh';
 import { SmallMeshes } from './render/smallMesh';
@@ -33,6 +33,10 @@ if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
 const view = new SceneView(document.body);
 const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
+const nestMeshes = new NestMeshes();
+view.scene.add(nestMeshes.group);
+const bloodMeshes = new BloodMeshes();
+view.scene.add(bloodMeshes.mesh);
 const herbMeshes = new HerbivoreMeshes();
 view.scene.add(herbMeshes.group);
 const eggView = new EggView();
@@ -162,7 +166,7 @@ function frame(now: number): void {
   if (live && !p.alive && inp.nav) ui.move(inp.nav); // death card: choose what to hatch as next
   setPlaying(live && p.alive);
   setRoarLabel(CALLS[roarStyle(p.stamina, p.needs.thirst, p.needs.hunger)].label);
-  const cmd = cam.command(live ? inp : { ...inp, moveF: 0, moveR: 0, sprint: 0, drink: false, eat: false, confirm: false, call: null });
+  const cmd = cam.command(live ? inp : { ...inp, moveF: 0, moveR: 0, sprint: 0, drink: false, eat: false, nest: false, confirm: false, call: null });
   if (cmd.call) pendingCall = cmd.call;
   if (cmd.respawn) pendingRespawn = true;
   while (acc >= TICK_DT) {
@@ -209,12 +213,12 @@ function frame(now: number): void {
 
   // Snout target when eating: the top of the nearest carcass.
   let dipY: number | undefined;
-  if (p.act === 'browse' || p.act === 'dig') dipY = heightAt(p.x, p.z) + 0.15 * p.body.hip;
+  if (p.act === 'browse' || p.act === 'dig' || p.act === 'nest') dipY = heightAt(p.x, p.z) + 0.15 * p.body.hip;
   if (p.act === 'eat') {
     const c = world.carcasses.reduce((b, k) => (Math.hypot(k.x - p.x, k.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? k : b), world.carcasses[0]);
     if (c) dipY = heightAt(c.x, c.z) + 0.35 * Math.cbrt(c.meat0 / 140);
   }
-  herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act, alive: p.alive,
+  herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act === 'nest' ? 'dig' : p.act, alive: p.alive,
     biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
     air: Math.max(0, y - heightAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, dt);
   view.setTime(dayTime(world.tick * TICK_DT));
@@ -225,6 +229,8 @@ function frame(now: number): void {
   smallMeshes.update(world.smalls, world.grubs, world.tick * TICK_DT, a, dt);
   sauroMeshes.update(world.sauros, a, dt);
   carcassMeshes.sync(world.carcasses, heightAt, !p.alive && world.lastDeath ? world.lastDeath.carcassId : -1);
+  nestMeshes.sync(world.nests, heightAt);
+  bloodMeshes.sync(world.blood, world.tick * TICK_DT, heightAt);
   // Saurosuchus bodies (head to tail) block the camera.
   const blockers = world.sauros.map((s) => {
     const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), gy = heightAt(s.x, s.z) + 1.0;

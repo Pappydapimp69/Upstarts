@@ -3,6 +3,8 @@ import { gradeAlong, heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terr
 import { fullNeeds, type Needs } from './needs';
 import { bodyOf, type Body } from './growth';
 import { pushOutOfTrees } from './flora';
+import { fullNutrients, type Nutrients } from './diet';
+import { lameness } from './injury';
 import type { CallStyle } from './calls';
 import type { Species, SpeciesId } from './species';
 
@@ -16,14 +18,16 @@ export interface Command {
   eat?: boolean; // held: bites live prey in front, eats a carcass otherwise
   respawn?: boolean; // pressed: respawn while dead, tear at the shell while in the egg
   species?: SpeciesId; // what to hatch as on respawn
+  fromNest?: boolean; // on respawn: hatch from a nest of that species if one has eggs (default true)
   call?: CallStyle | 'auto'; // pressed: a call from the wheel, or 'auto' for Y's condition roar
   jump?: boolean; // pressed: crouch and leap
   rest?: boolean; // held: lie down and get its breath back
+  nest?: boolean; // held: an adult scrapes a nest and lays a clutch
 }
 
 export const IDLE: Command = { moveX: 0, moveZ: 0, sprint: 0 };
 
-export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff' | 'dig';
+export type Act = 'none' | 'turn' | 'shuffle' | 'drink' | 'eat' | 'browse' | 'bite' | 'sniff' | 'dig' | 'nest';
 
 export interface Dino {
   species: Species;
@@ -55,6 +59,13 @@ export interface Dino {
   resting: boolean; // lying down (held)
   rest: number; // 0 standing .. 1 fully down, eased
   jumpLanded: number; // landing speed on the tick it touched down, else 0
+  nutrients: Nutrients; // protein, lipids, carbohydrates (diet.ts)
+  bleed: number; // open wound, 0 none .. 1 bleeding hard (injury.ts)
+  broken: number; // broken leg: 0 sound, else the fraction still to mend
+  dropT: number; // m walked (or s stood) since its last blood drop
+  generation: number; // 1 for a first life; hatching from a nest is one more than its parent
+  nestT: number; // s spent scraping the current nest
+  lastClutch: number; // world time of its last clutch, s (-inf: never)
 }
 
 // A leap (Dlist demo): a short crouch, then a ballistic arc, heavier on the way down.
@@ -78,6 +89,7 @@ export function createDino(species: Species, x: number, z: number, yaw: number, 
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: heightAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
     needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 9, callT: 9, callDur: 0, gait: 0, sniff: null, egg: 0,
     jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0,
+    nutrients: fullNutrients(), bleed: 0, broken: 0, dropT: 0, generation: 1, nestT: 0, lastClutch: -Infinity,
   };
 }
 
@@ -109,11 +121,14 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
     if (mag > 0.02) {
       steer = true;
       desiredYaw = Math.atan2(cmd.moveX, cmd.moveZ);
-      target = cmd.sprint > 0.25
+      target = cmd.sprint > 0.25 && d.broken <= 0
         ? lerp(sp.sprintMin, sp.sprintMax, cmd.sprint) * Math.max(mag, 0.65)
         : sp.walk * mag;
     }
   }
+
+  // Injured, it can't keep up its pace: a broken leg, or a limp at low health.
+  if (d.alive) target *= lameness(d.broken, d.needs.health);
 
   // Wading slows it, up to about half speed at hip depth.
   const depth = waterDepthAt(d.x, d.z);
@@ -147,7 +162,7 @@ export function stepDino(d: Dino, cmd: Command, dt: number, ov?: Override): void
   if (d.resting) d.resting = !!cmd.rest && d.alive;
   else if (cmd.rest && d.alive && !d.jump && !ov && d.speed < 0.6) d.resting = true;
   d.rest = damp(d.rest, d.resting ? 1 : 0, d.resting ? 2.2 : 3.5, dt);
-  if (cmd.jump && d.alive && !d.jump && !ov && !d.resting && d.rest < 0.3) startJump(d);
+  if (cmd.jump && d.alive && d.broken <= 0 && !d.jump && !ov && !d.resting && d.rest < 0.3) startJump(d);
   const landed = stepJump(d, dt);
 
   if (d.alive) d.stamina = clamp(d.stamina + (sprinting ? STAMINA.sprint : d.jump ? 0 : d.rest > 0.8 ? STAMINA.rest : STAMINA.walk) * dt, 0, 1);
@@ -211,4 +226,4 @@ function stepJump(d: Dino, dt: number): number {
 }
 
 // Above about two thirds of top speed (5 m/s for an adult) with the trigger held.
-export const isSprinting = (d: Dino, cmd: Command): boolean => d.speed > 0.68 * d.body.sprintMax && cmd.sprint > 0.25;
+export const isSprinting = (d: Dino, cmd: Command): boolean => d.broken <= 0 && d.speed > 0.68 * d.body.sprintMax && cmd.sprint > 0.25;

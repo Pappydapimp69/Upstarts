@@ -408,12 +408,12 @@ time on art (M5).**
 ## 14. Open decisions — YOUR CALL
 
 1. ~~Survival stats~~ Decided: the §4 set as proposed (D12).
-2. Growth time: about 2–3 hours to adult, or longer like *The Isle*? (Built at 2.5 h as a single setting, `GROWTH.toAdult`.)
+2. ~~Growth time~~ Decided: longer, closer to *The Isle* (D18).
 3. ~~Death~~ Decided: permanent (D10); only records carry over (D13).
 4. Map: start at 2 × 2 km, as proposed?
 5. ~~Day length~~ Decided: 60 min of daylight (40 near midday) plus 20 min of night (D11).
 6. Camera: third-person only, or a first-person option too?
-7. Nesting and family play (*The Isle*-style): in scope later, or never?
+7. ~~Nesting and family play~~ Decided: in, as nests your next life hatches from (D20).
 8. ~~Real name for the game.~~ Decided: **Upstarts** (D9).
 
 ---
@@ -439,6 +439,10 @@ time on art (M5).**
 | D15 | Hit points come from the body: max HP scales with mass^(2/3) (size and weight), 100 HP for an adult Herrerasaurus; bite damage in HP scales the same way with the attacker, times bite strength, divided by the defender's armor. Bigger animals have more HP. | LOCKED |
 | D16 | Playable now: Herrerasaurus, Sanjuansaurus, Eodromaeus, Panphagia, chosen at each hatch. Sanjuansaurus is pulled forward from the later candidates as the mid-size option. | LOCKED |
 | D17 | Per-bite cap on the defender's max HP, gated by mass ratio r: 40% up to r = 3, rising on a log scale to 100% at r = 8, uniform for every bite (ZaneGPT review, Brain sandbox-power-scaling E2). Saurosuchus kills an adult Herrerasaurus in 3 bites, a sub-adult in 2, a juvenile in 1. | LOCKED |
+| D18 | Growth to adult roughly doubled, closer to *The Isle*: Herrerasaurus 5 h, Sanjuansaurus 4 h, Panphagia 3 h, Eodromaeus 2.5 h. Bleeding or a broken leg pauses growth. Nests (D20) soften the cost of a death. | LOCKED |
+| D19 | Injuries: bites open wounds (bleed drains health, stops healing, strengthens scent, leaves a blood trail) and big bites can break a leg (no sprint or jump, about half speed, mends in 8 min fed). Limp below 30% health. | LOCKED |
+| D20 | Nests: a fed adult lays a clutch; a new life of that species hatches there a generation on (own nest first, then anyone's in co-op). Unguarded eggs are lost one per 4 min; nests expire after 45 min. | LOCKED |
+| D21 | Diet nutrients (*The Isle* Evrima-style): protein and lipids for carnivores, plus carbohydrates for omnivores. Food types differ (lean, fatty, grubs, ferns). The lowest one slows growth (to 35%) and healing (to 50%). | LOCKED |
 
 ---
 

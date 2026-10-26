@@ -53,6 +53,10 @@
       .bar.hunger i { background: var(--mud); }
       .bar.stam i { background: var(--ochre); }
       .bar.grow i { background: var(--leaf); }
+      .bar.diet i { background: #b98ac9; }
+      .val.hurt { color: #e0796f; }
+      .snest { display: block; font-size: 0.7rem; color: #b98ac9; margin-top: 4px; }
+      .snest:empty { display: none; }
       .bar.low i { animation: low 1s ease-in-out infinite; }
       @keyframes low { 50% { opacity: 0.45; } }
       .val { font-family: var(--f-mono); font-size: 0.74rem; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 0; }
@@ -155,6 +159,7 @@
       .tbtn[data-b="menu"] { right: 0; top: -58px; }
       .tbtn[data-b="cam"] { right: 56px; top: -58px; }
       .tbtn[data-b="rest"] { left: -70px; bottom: 0; }
+      .tbtn[data-b="nest"] { left: -62px; bottom: 72px; }
       @media (max-width: 760px) { .keys { display: none; } .binomial { font-size: 1.1rem; } .chips { top: calc(108px + env(safe-area-inset-top, 0px)); } }
     </style>
   </head>
@@ -178,7 +183,9 @@
       <div class="row"><span class="lab">Thirst</span><span class="bar"><i data-k="thirst"></i></span><span class="val" data-v="thirst"></span></div>
       <div class="row"><span class="lab">Stamina</span><span class="bar stam"><i data-k="stamina"></i></span><span class="val" data-v="stamina"></span></div>
       <div class="row"><span class="lab">Growth</span><span class="bar grow"><i data-k="growth"></i></span><span class="val" data-v="growth"></span></div>
+      <div class="row"><span class="lab">Diet</span><span class="bar diet"><i data-k="diet"></i></span><span class="val" data-v="diet"></span></div>
       <div class="row pace"><span class="lab">Pace</span><span class="val" id="pace">Standing</span></div>
+      <div class="row pace"><span class="lab">Body</span><span class="val" id="body">Sound</span></div>
     </section>
 
     <div class="wheel" id="callWheel" hidden aria-live="polite"><div class="mid"><b id="wheelName">Roar</b><span id="wheelHint">Y: roar</span></div></div>
@@ -197,6 +204,7 @@
         <button type="button" class="tbtn" data-b="b">B<small>Drink</small></button>
         <button type="button" class="tbtn" data-b="a">A<small>Jump</small></button>
         <button type="button" class="tbtn" data-b="rest">LT<small>Rest</small></button>
+        <button type="button" class="tbtn small" data-b="nest" aria-label="Nest">&#9673;</button>
       </div>
     </div>
 
@@ -211,7 +219,7 @@
         <h1>Choose your dinosaur</h1>
         <p class="lede">Ischigualasto, about 231 million years ago. Crocodile relatives rule the valley. You hatch small: drink, scavenge, grow, and stay out of the way of <i>Saurosuchus</i> until you can hunt for yourself.</p>
         <div class="species" id="pickIntro" role="listbox" aria-label="Species"></div>
-        <p class="lede small">Hold B / G to drink at water, or sniff the wind away from it · hold X / E to eat a carcass, or bite live prey · right trigger / Shift sprints. Death is permanent; only your records carry over.</p>
+        <p class="lede small">Hold B / G to drink at water, or sniff the wind away from it · hold X / E to eat a carcass, or bite live prey · right trigger / Shift sprints. Death is permanent: only your records carry over, and a grown adult can lay a nest (hold N) for its next life to hatch in.</p>
         <p class="cta" id="introCta">Left and right to choose · A or Enter to hatch · or tap one</p>
       </div>
     </div>

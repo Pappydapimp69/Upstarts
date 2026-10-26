@@ -86,7 +86,7 @@ describe('eating', () => {
     const w = noSauro(createWorld(1));
     w.player = createDino(HERRERASAURUS, -20, 20, 0);
     w.player.needs.hunger = 0.2;
-    w.carcasses = [{ id: 99, x: -20, z: 22.5, yaw: 0, meat: 30, meat0: 30 }];
+    w.carcasses = [{ id: 99, x: -20, z: 22.5, yaw: 0, meat: 30, meat0: 30, food: 'meat' }];
     runFor(w, { ...idle, eat: true }, 12);
     expect(w.player.needs.hunger).toBeGreaterThan(0.9);
     const c = w.carcasses.find((k) => k.id === 99)!;

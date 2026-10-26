@@ -55,7 +55,7 @@ describe('species', () => {
     w.herbivores = [];
     w.player = createDino(EODROMAEUS, -20, 20, 0, 1);
     w.player.needs.hunger = 0;
-    w.carcasses = [{ id: 99, x: -20, z: 20.6, yaw: 0, meat: 30, meat0: 30 }];
+    w.carcasses = [{ id: 99, x: -20, z: 20.6, yaw: 0, meat: 30, meat0: 30, food: 'meat' }];
     for (let i = 0; i < 20 * TICK_HZ; i++) step(w, { ...idle, eat: true });
     expect(w.player.needs.hunger).toBeGreaterThan(0.95);
     const eaten = 30 - w.carcasses[0].meat - CARCASS.rot * 20; // what it ate, minus 20 s of rot

@@ -52,7 +52,7 @@ describe('growth', () => {
   });
 
   it('takes about the set time to reach adult', () => {
-    expect(HERRERASAURUS.toAdult).toBe(2.5 * 3600);
+    expect(HERRERASAURUS.toAdult).toBe(5 * 3600);
     expect(stageOf(0.9)).toBe('adult');
     expect(bodyOf(HERRERASAURUS, 1).mass).toBeCloseTo(350);
   });

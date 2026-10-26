@@ -17,6 +17,9 @@ import { SPRINT_DB, STEP_DB } from './hearing';
 import { createSmall, exaeretodonHome, exposed, GRUB, placeBurrows, placeGrubs, respawnSmall, SMALL, SMALL_POP, smallMass, stepSmall, SWALLOW_BELOW, type Grub, type Small } from './smallprey';
 import { dayTime, isNight } from './clock';
 import { CALLS, callLevel, heardAt, HERD_HEARS, roarStyle, SAURO_HEARS } from './calls';
+import { balance, dietGrowth, dietHeal, nourish, stepNutrients, type Food } from './diet';
+import { bloodScent, breakChance, INJURY, wound, type Blood } from './injury';
+import { NEST, type Nest } from './nest';
 
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
@@ -40,6 +43,7 @@ export interface Carcass {
   yaw: number;
   meat: number;
   meat0: number;
+  food: Food; // what kind of meat it is (diet.ts): lean, fatty, or an ordinary find
 }
 
 export const HERDS = {
@@ -79,7 +83,7 @@ export interface PlayerSlot {
 export interface Death {
   age: number; // s it lived
   growth: number;
-  cause: 'hunger' | 'thirst' | 'Saurosuchus';
+  cause: 'hunger' | 'thirst' | 'bleeding' | 'Saurosuchus';
   carcassId: number; // its own body, lying where it fell
 }
 
@@ -88,7 +92,7 @@ export interface World {
   seed: number;
   // One seeded stream per system, so a change in how often one system draws never shifts another's rolls
   // (Brain: test E2, prologue E22).
-  rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number; prey: () => number };
+  rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number; prey: () => number; injury: () => number };
   players: PlayerSlot[];
   // The local player (players[0]): its creature, last death, lives and species. Accessors, kept so the
   // client and tests can address "the player" without knowing about slots.
@@ -108,14 +112,16 @@ export interface World {
   speciesId: SpeciesId; // what the local player hatches as next (accessor)
   events: SoundEvent[]; // sounds made this tick; the client drains them
   eggs: boolean; // new hatchlings start inside an egg (the game; tests start hatched)
+  nests: Nest[];
+  blood: Blood[]; // drops left by bleeding players, on the scent field
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
 export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus', eggs = false): World {
-  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37) };
+  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37), injury: rng(seed ^ 0x1b1d) };
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale,
-    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs,
+    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs, nests: [], blood: [],
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -155,9 +161,11 @@ function addSmallPrey(w: World): void {
 // How much meat fills this animal's empty stomach: 25 kg for an adult Herrerasaurus, scaled by mass.
 const stomachOf = (d: Dino): number => NEEDS.kgPerHunger * (d.body.mass / 350);
 
-// Put meat in its stomach; whatever doesn't fit is wasted.
-function feed(d: Dino, kg: number): void {
-  d.needs.hunger = Math.min(1, d.needs.hunger + kg / stomachOf(d));
+// Put food in its stomach; whatever doesn't fit is wasted. What it was feeds the nutrients.
+function feed(d: Dino, kg: number, food: Food): void {
+  const fill = Math.min(kg / stomachOf(d), 1 - d.needs.hunger);
+  d.needs.hunger = Math.min(1, d.needs.hunger + fill);
+  nourish(d.nutrients, food, fill);
 }
 
 function dry(x: number, z: number): boolean {
@@ -248,6 +256,10 @@ function smell(w: World, d: Dino): { yaw: number; strength: number } | null {
   for (const c of w.carcasses) consider(c.x, c.z, 0.5 + c.meat / 100);
   for (const h of w.herbivores) if (h.bleeding > 0) consider(h.x, h.z, 1.5);
   for (const m of w.smalls) if (m.bleeding > 0 && exposed(m)) consider(m.x, m.z, 0.3 + m.mass / 50);
+  // Blood drops on the ground, and other players' open wounds.
+  const now = w.tick * TICK_DT;
+  for (const b of w.blood) consider(b.x, b.z, 0.6 * bloodScent(b, now));
+  for (const k of w.players) if (k.dino !== d && k.dino.alive && k.dino.bleed > 0) consider(k.dino.x, k.dino.z, 0.5 + 1.5 * k.dino.bleed);
   return best;
 }
 
@@ -259,6 +271,34 @@ function spawnDino(w: World, id: SpeciesId): Dino {
   const d = createDino(SPECIES[id], s.x, s.z, s.yaw, w.startGrowth);
   if (w.eggs && w.startGrowth === 0) d.egg = EGG.presses;
   return d;
+}
+
+// The nest a player would hatch from as this species: its own first, else anyone's (co-op), with eggs left.
+export function nestFor(w: World, player: number, id: SpeciesId): Nest | null {
+  const ok = w.nests.filter((n) => n.species === id && n.eggs > 0);
+  return ok.find((n) => n.owner === player) ?? ok[0] ?? null;
+}
+
+// Hatch from a nest: one of its eggs, a generation on from the parent.
+function hatchFromNest(w: World, n: Nest): Dino {
+  const d = createDino(SPECIES[n.species], n.x, n.z, n.yaw, w.startGrowth);
+  if (w.eggs && w.startGrowth === 0) d.egg = EGG.presses;
+  d.generation = n.generation + 1;
+  n.eggs--;
+  return d;
+}
+
+// Can it lay here and now? Returns why not, or null.
+export function nestBlock(w: World, slot: PlayerSlot): string | null {
+  const d = slot.dino, now = w.tick * TICK_DT;
+  if (d.growth < NEST.minGrowth) return 'too young';
+  if (d.needs.hunger <= NEST.fedAbove || d.needs.thirst <= NEST.fedAbove) return 'not fed and watered enough';
+  if (d.bleed > 0 || d.broken > 0) return 'injured';
+  if (now - d.lastClutch < NEST.every) return 'laid too recently';
+  if (w.nests.some((n) => n.owner === slot.id && n.eggs > 0)) return 'already has a nest';
+  if (!dry(d.x, d.z)) return 'not on dry ground';
+  if (w.nests.some((n) => Math.hypot(n.x - d.x, n.z - d.z) < NEST.spacing)) return 'too close to another nest';
+  return null;
 }
 
 // Somewhere on the dry valley floor.
@@ -275,8 +315,8 @@ function placeCarcass(w: World, x?: number, z?: number, meat?: number): void {
   placeCarcassAt(w, x, z, w.rng.carcass() * Math.PI * 2, m);
 }
 
-function placeCarcassAt(w: World, x: number, z: number, yaw: number, meat: number): void {
-  w.carcasses.push({ id: w.nextId++, x, z, yaw, meat, meat0: meat });
+function placeCarcassAt(w: World, x: number, z: number, yaw: number, meat: number, food: Food = 'meat'): void {
+  w.carcasses.push({ id: w.nextId++, x, z, yaw, meat, meat0: meat, food });
 }
 
 // Nearest water within reach of the hips, searched in 24 directions.
@@ -324,7 +364,7 @@ function killPlayer(w: World, slot: PlayerSlot, cause: Death['cause']): void {
   d.act = 'none';
   d.needs.health = 0;
   // Its body stays in the world as a carcass others can eat, from the moment it dies.
-  placeCarcassAt(w, d.x, d.z, d.yaw, d.body.meat);
+  placeCarcassAt(w, d.x, d.z, d.yaw, d.body.meat, 'lean');
   slot.lastDeath = { age: d.age, growth: d.growth, cause, carcassId: w.carcasses[w.carcasses.length - 1].id };
 }
 
@@ -343,7 +383,9 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
       if (cmd.species) slot.speciesId = cmd.species;
-      slot.dino = spawnDino(w, slot.speciesId);
+      // A nest of that species with eggs left: hatch there, a generation on. Else a fresh spawn.
+      const n = cmd.fromNest === false ? null : nestFor(w, slot.id, slot.speciesId);
+      slot.dino = n ? hatchFromNest(w, n) : spawnDino(w, slot.speciesId);
       slot.dino.owner = slot.id;
       slot.lives++;
     }
@@ -371,7 +413,25 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     const free = !d.resting && d.rest < 0.3 && !d.jump;
     const wantEat = free && !!cmd.eat, wantDrink = free && !!cmd.drink;
     const prey = wantEat ? preyInReach(w, d) : null;
-    if (wantDrink) {
+    const nowT = w.tick * TICK_DT;
+    const nesting = free && !!cmd.nest && !wantDrink && !wantEat && !nestBlock(w, slot);
+    if (!nesting) d.nestT = 0;
+    if (nesting) {
+      // Scrape a hollow, then lay the clutch in it.
+      act = 'nest';
+      ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
+      d.nestT += dt;
+      if (d.nestT >= NEST.build) {
+        w.nests.push({
+          id: w.nextId++, x: d.x, z: d.z, yaw: d.yaw, species: d.species.id, owner: slot.id, generation: d.generation,
+          eggs: NEST.clutch[d.species.id], laidAt: nowT, unguarded: 0,
+        });
+        d.needs.hunger -= NEST.cost.hunger;
+        d.needs.thirst -= NEST.cost.thirst;
+        d.lastClutch = nowT;
+        d.nestT = 0;
+      }
+    } else if (wantDrink) {
       const water = findWater(d);
       if (water) ({ act, ov } = approach(d, water.yaw, water.dist, d.body.snout, 'drink'));
       else {
@@ -410,8 +470,8 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
           m.alarmAt = w.tick * TICK_DT;
           if (m.health <= 0) {
             // Small enough to swallow whole; anything bigger leaves a carcass.
-            if (m.mass < SWALLOW_BELOW) feed(d, m.mass * 0.6);
-            else placeCarcassAt(w, m.x, m.z, m.yaw, m.mass * 0.5);
+            if (m.mass < SWALLOW_BELOW) feed(d, m.mass * 0.6, 'whole');
+            else placeCarcassAt(w, m.x, m.z, m.yaw, m.mass * 0.5, 'fatty');
             m.state = 'gone';
             m.stateT = 0;
           }
@@ -451,7 +511,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
         if (act === 'dig') {
           grub.dug += dt;
           if (grub.dug >= GRUB.dig) {
-            feed(d, GRUB.kg);
+            feed(d, GRUB.kg, 'grub');
             grub.dug = 0;
             grub.readyAt = now + GRUB.respawn;
           }
@@ -474,10 +534,29 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
       const stomach = stomachOf(d), rate = NEEDS.eatRate * Math.pow(m, 0.75);
       const kg = Math.min(food.meat, rate * dt, (1 - n.hunger) * stomach);
       food.meat -= kg;
-      n.hunger = Math.min(1, n.hunger + kg / stomach);
+      feed(d, kg, food.food);
     }
-    if (act === 'browse') n.hunger = Math.min(1, n.hunger + NEEDS.browseRate * dt);
-    stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, needPace(d.species.mass));
+    if (act === 'browse') {
+      const fill = Math.min(NEEDS.browseRate * dt, 1 - n.hunger);
+      n.hunger += fill;
+      nourish(d.nutrients, 'fern', fill);
+    }
+    const pace = needPace(d.species.mass), diet = balance(d.nutrients, d.species.diet);
+    // An open wound doesn't heal until it clots.
+    stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, pace, d.bleed > 0 ? 0 : dietHeal(diet));
+    stepNutrients(d.nutrients, d.species.diet, dt, w.needScale, pace);
+    // Wounds bleed and clot (faster lying down); a broken leg mends while fed and watered.
+    if (d.bleed > 0) {
+      n.health = Math.max(0, n.health - INJURY.bleedDamage * d.bleed * dt);
+      d.bleed = Math.max(0, d.bleed - (d.rest > 0.8 ? INJURY.clotRest : INJURY.clot) * dt);
+      // Drops on the ground as it goes: a trail others can sniff out.
+      d.dropT += d.speed > 0.15 ? d.speed * dt : (dt * INJURY.dropEvery) / INJURY.dropIdle;
+      if (d.dropT >= INJURY.dropEvery) {
+        d.dropT = 0;
+        w.blood.push({ x: d.x, z: d.z, t: nowT, s: d.bleed });
+      }
+    }
+    if (d.broken > 0 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove) d.broken = Math.max(0, d.broken - (dt * w.needScale) / INJURY.mend);
     d.age += dt;
     d.hitT += dt;
     // Footfalls: stride from Alexander's relation, two feet per stride; a sprint slams (+10 dB noise rating).
@@ -515,9 +594,9 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
         }
       }
     }
-    // Grows only while fed and watered.
-    if (d.growth < 1 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove) {
-      d.growth = Math.min(1, d.growth + (dt * w.needScale) / d.species.toAdult);
+    // Grows only while fed, watered and not hurt; a poor diet slows it.
+    if (d.growth < 1 && n.hunger > GROWTH.fedAbove && n.thirst > GROWTH.fedAbove && d.bleed <= 0 && d.broken <= 0) {
+      d.growth = Math.min(1, d.growth + (dt * w.needScale * dietGrowth(diet)) / d.species.toAdult);
       d.body = bodyOf(d.species, d.growth);
     }
   }
@@ -538,7 +617,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   const quarry: Quarry[] = [];
   for (const slot of w.players) {
     const p = slot.dino;
-    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass });
+    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass, scent: 1 + INJURY.scent * p.bleed });
   }
   for (const h of w.herbivores) {
     if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass });
@@ -554,6 +633,9 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
           const p = slot.dino;
           const share = biteDamage(SAUROSUCHUS.mass, p.body.mass, SAUROSUCHUS.biteMult);
           p.needs.health = Math.max(0, p.needs.health - share);
+          // The wound bleeds; a big enough bite can break a leg.
+          p.bleed = wound(p.bleed, share);
+          if (w.rng.injury() < breakChance(share)) p.broken = 1;
           w.events.push({ kind: 'hit', who: 'saurosuchus', x: p.x, y: groundY(p.x, p.z) + 0.8 * p.body.hip, z: p.z, level: 80 + 8 * share, share });
           w.events.push({ kind: 'call', who: 'player', call: 'yelp', ...mouth(p.x, p.z, p.yaw, p.body.snout, 0.9 * p.body.hip), level: 92 + 10 * Math.log10(p.body.mass / 350) });
           p.hitT = 0;
@@ -588,7 +670,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     if (s.target !== -1 && s.state !== 'eat') {
       const dead = w.herbivores.find((h) => h.id === s.target && h.state === 'dead');
       if (dead) {
-        placeCarcassAt(w, dead.x, dead.z, dead.yaw, HYPERODAPEDON.meat);
+        placeCarcassAt(w, dead.x, dead.z, dead.yaw, HYPERODAPEDON.meat, 'fatty');
         dead.state = 'dead';
         s.target = w.carcasses[w.carcasses.length - 1].id;
         s.state = 'eat';
@@ -599,7 +681,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   }
   for (const s of w.sauros) {
     if (s.state === 'dead' && s.health > -1) {
-      placeCarcassAt(w, s.x, s.z, s.yaw, SAUROSUCHUS.meat);
+      placeCarcassAt(w, s.x, s.z, s.yaw, SAUROSUCHUS.meat, 'lean');
       s.health = -1;
       w.sauroGoneAt = now;
     }
@@ -612,8 +694,10 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   }
   for (const slot of w.players) {
     const p = slot.dino;
-    if (p.alive && p.needs.health <= 0) killPlayer(w, slot, p.needs.thirst <= 0 ? 'thirst' : 'hunger');
+    if (p.alive && p.needs.health <= 0) killPlayer(w, slot, p.needs.thirst <= 0 ? 'thirst' : p.needs.hunger <= 0 ? 'hunger' : 'bleeding');
   }
+  stepNests(w, now, dt);
+  w.blood = w.blood.filter((b) => now - b.t < INJURY.dropLife);
 
   const preds = [...w.players.map(predatorOf), ...w.sauros.map(predatorOfSauro)];
   for (const h of w.herbivores) {
@@ -627,7 +711,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     if (m.state === 'gone' && m.stateT > SMALL[m.kind].respawn) respawnSmall(m, w.rng.prey);
   }
   for (const h of w.herbivores) {
-    if (h.state === 'dead' && h.health > -1) placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat);
+    if (h.state === 'dead' && h.health > -1) placeCarcassAt(w, h.x, h.z, h.yaw, HYPERODAPEDON.meat, 'fatty');
   }
   w.herbivores = w.herbivores.filter((h) => h.state !== 'dead');
   // A calm herd moves on once it reaches where it was heading.
@@ -649,4 +733,18 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     const a = w.rng.herd() * Math.PI * 2;
     if (dry(Math.cos(a) * 60, Math.sin(a) * 60)) addHerbivore(w, herd, Math.cos(a) * 60, Math.sin(a) * 60);
   }
+}
+
+// Eggs left alone get taken one at a time; unhatched ones go bad in time; empty nests are abandoned.
+function stepNests(w: World, now: number, dt: number): void {
+  for (const n of w.nests) {
+    const guarded = w.players.some((k) => k.dino.alive && k.dino.egg === 0 && k.dino.species.id === n.species
+      && k.dino.growth >= NEST.minGrowth && Math.hypot(k.dino.x - n.x, k.dino.z - n.z) < NEST.guard);
+    n.unguarded = guarded ? 0 : n.unguarded + dt;
+    if (n.unguarded >= NEST.raidEvery && n.eggs > 0) {
+      n.eggs--;
+      n.unguarded = 0;
+    }
+  }
+  w.nests = w.nests.filter((n) => n.eggs > 0 && now - n.laidAt < NEST.life);
 }

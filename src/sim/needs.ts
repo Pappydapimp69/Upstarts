@@ -32,12 +32,13 @@ export const fullNeeds = (): Needs => ({ hunger: 1, thirst: 1, health: 1 });
 export const needPace = (adultMass: number): number => Math.pow(350 / adultMass, 0.324);
 
 // scale speeds the clock up for testing (?fast in the URL); pace is needPace for the species.
-export function stepNeeds(n: Needs, sprinting: boolean, dt: number, scale = 1, pace = 1): void {
+// heal: multiplier on healing (a poor diet heals slower).
+export function stepNeeds(n: Needs, sprinting: boolean, dt: number, scale = 1, pace = 1, heal = 1): void {
   const t = dt * scale;
   const tp = t * pace;
   const healing = n.health < 1 && n.hunger > NEEDS.healAbove && n.thirst > NEEDS.healAbove;
   n.thirst = clamp(n.thirst - (tp / NEEDS.thirstEmpty) * (sprinting ? NEEDS.sprintThirst : 1), 0, 1);
   n.hunger = clamp(n.hunger - (tp / NEEDS.hungerEmpty) * (sprinting ? NEEDS.sprintHunger : 1) * (healing ? NEEDS.healHunger : 1), 0, 1);
   if (n.hunger <= 0 || n.thirst <= 0) n.health = clamp(n.health - NEEDS.starveDamage * t * ((n.hunger <= 0 ? 1 : 0) + (n.thirst <= 0 ? 1 : 0)), 0, 1);
-  else if (healing) n.health = clamp(n.health + NEEDS.healRate * t, 0, 1);
+  else if (healing) n.health = clamp(n.health + NEEDS.healRate * heal * t, 0, 1);
 }

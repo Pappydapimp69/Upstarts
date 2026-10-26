@@ -18,13 +18,27 @@ Pushes deploy to GitHub Pages (`.github/workflows/pages.yml`).
 ## Play
 
 WASD move · Shift sprint · hold G drink (or sniff away from water) · hold E eat (or bite live prey)
-· drag to look · C camera behind.
-Controller: left stick, RT sprint, hold B drink/sniff, hold X eat/bite, A to hatch again.
+· hold N nest (adults) · drag to look · C camera behind.
+Controller: left stick, RT sprint, hold B drink/sniff, hold X eat/bite, hold D-pad down to nest, A to hatch again.
 Footsteps rumble the controller: heavier and faster animals hit harder, and a step to your left or
 right drives that side (left/right triggers on Xbox-style pads, else the left/right motors).
 Toggle it on the pause card (R, or X on a controller).
 
 Add `?fast` to the URL to run hunger, thirst and growth 20x faster, and `?adult` to start fully grown.
+
+## Isle-style systems
+
+- **Injuries** (`src/sim/injury.ts`): a bite opens a wound that drains health, blocks healing and growth,
+  makes you smell of blood to Saurosuchus and drops a sniffable trail; it clots in about a minute (faster
+  lying down). A big bite can break a leg: no sprint or jump and about half speed until it mends (8 min fed).
+  Below 30% health you limp.
+- **Diet** (`src/sim/diet.ts`): protein and fats (plus carbs for Panphagia) drain slowly on top of hunger.
+  Lean carcasses are mostly protein; Hyperodapedon, Exaeretodon and grubs carry the fat; ferns the carbs.
+  A poor diet slows growth to about a third and healing to half.
+- **Nests** (`src/sim/nest.ts`): a well-fed adult holds N to scrape a nest and lay a clutch. Your next life of
+  that species hatches there, a generation on. Unguarded eggs get taken every 4 minutes; eggs go bad after 45.
+- **Growth** is about twice as long: 5 h to adult for Herrerasaurus, 4 h Sanjuansaurus, 3 h Panphagia,
+  2.5 h Eodromaeus.
 
 ## Species
 
