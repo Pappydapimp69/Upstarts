@@ -40,6 +40,13 @@ Add `?fast` to the URL to run hunger, thirst and growth 20x faster, and `?adult`
 - **Growth** is about twice as long: 5 h to adult for Herrerasaurus, 4 h Sanjuansaurus, 3 h Panphagia,
   2.5 h Eodromaeus.
 
+## Saves
+
+The game saves to this browser every 30 s and when the tab is hidden (`src/sim/save.ts`, versioned JSON with
+every RNG stream's state, so a loaded world plays on exactly as it would have). Continue from the splash
+(L, or Y on a controller); export or import a save file from the pause card. `?adult` and `?fast` games
+are never saved.
+
 ## Species
 
 Four playable dinosaurs, chosen on the splash and on the death card: *Herrerasaurus*, *Sanjuansaurus*,

@@ -6,7 +6,7 @@ import { browseAt } from './flora';
 import { heightAt, SPAWNS, waterDepthAt } from './terrain';
 import { SPECIES, type SpeciesId } from './species';
 import { lerp, wrapAngle } from './math';
-import { rng } from './rng';
+import { rng, type Rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
 import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
@@ -92,7 +92,7 @@ export interface World {
   seed: number;
   // One seeded stream per system, so a change in how often one system draws never shifts another's rolls
   // (Brain: test E2, prologue E22).
-  rng: { spawn: () => number; herd: () => number; carcass: () => number; ai: () => number; prey: () => number; injury: () => number };
+  rng: { spawn: Rng; herd: Rng; carcass: Rng; ai: Rng; prey: Rng; injury: Rng };
   players: PlayerSlot[];
   // The local player (players[0]): its creature, last death, lives and species. Accessors, kept so the
   // client and tests can address "the player" without knowing about slots.

@@ -131,6 +131,58 @@ export class Ui {
     document.body.classList.toggle('playing', !on);
   }
 
+  // The saved game, if any, as a button on the splash.
+  showContinue(s: { species: SpeciesId; growth: number; alive: boolean; savedAt: number } | null, error?: string): void {
+    const b = this.el('continueBtn');
+    b.hidden = !s;
+    if (s) {
+      const mins = Math.max(0, Math.round((Date.now() - s.savedAt) / 60000));
+      const key = inputState.device === 'pad' ? 'Y' : inputState.device === 'keys' ? 'L' : 'tap';
+      b.textContent = `Continue: ${s.alive ? `${cap(stageOf(s.growth))} ${SPECIES[s.species].name} (${Math.round(s.growth * 100)}%)` : 'after a death'}`
+        + ` · saved ${mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`} · ${key}`;
+    }
+    const e = this.el('loadErr');
+    e.hidden = !error;
+    e.textContent = error ? `Couldn't load the save: ${error}` : '';
+  }
+
+  onContinue(f: () => void): void {
+    this.el('continueBtn').addEventListener('click', (e) => {
+      e.stopPropagation(); // not a hatch
+      f();
+    });
+  }
+
+  onExport(f: () => string): void {
+    this.el('exportBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = URL.createObjectURL(new Blob([f()], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `upstarts-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.el('saveMsg').textContent = 'Save exported.';
+    });
+  }
+
+  // f returns an error message, or null when it loaded.
+  onImport(f: (text: string) => string | null): void {
+    const input = this.el('importFile') as HTMLInputElement;
+    this.el('importBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      input.click();
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      input.value = '';
+      if (!file) return;
+      const err = f(await file.text());
+      this.el('saveMsg').textContent = err ? `Couldn't load that file: ${err}` : 'Save loaded. Resume to play it.';
+    });
+  }
+
   showPause(on: boolean): void {
     this.el('pause').hidden = !on;
   }

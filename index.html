@@ -55,6 +55,7 @@
       .bar.grow i { background: var(--leaf); }
       .bar.diet i { background: #b98ac9; }
       .val.hurt { color: #e0796f; }
+      .saverow { display: flex; gap: 8px; flex-wrap: wrap; }
       .snest { display: block; font-size: 0.7rem; color: #b98ac9; margin-top: 4px; }
       .snest:empty { display: none; }
       .bar.low i { animation: low 1s ease-in-out infinite; }
@@ -220,6 +221,8 @@
         <p class="lede">Ischigualasto, about 231 million years ago. Crocodile relatives rule the valley. You hatch small: drink, scavenge, grow, and stay out of the way of <i>Saurosuchus</i> until you can hunt for yourself.</p>
         <div class="species" id="pickIntro" role="listbox" aria-label="Species"></div>
         <p class="lede small">Hold B / G to drink at water, or sniff the wind away from it · hold X / E to eat a carcass, or bite live prey · right trigger / Shift sprints. Death is permanent: only your records carry over, and a grown adult can lay a nest (hold N) for its next life to hatch in.</p>
+        <button type="button" id="continueBtn" hidden></button>
+        <p class="hint" id="loadErr" hidden></p>
         <p class="cta" id="introCta">Left and right to choose · A or Enter to hatch · or tap one</p>
       </div>
     </div>
@@ -229,6 +232,9 @@
         <p class="eyebrow">Paused</p>
         <h1>Herrerasaurus</h1>
         <button type="button" id="rumbleBtn">Controller rumble: on</button>
+        <div class="saverow"><button type="button" id="exportBtn">Export save</button><button type="button" id="importBtn">Import save</button>
+          <input type="file" id="importFile" accept=".json,application/json" hidden></div>
+        <p class="hint" id="saveMsg"></p>
         <p class="hint" id="pauseHint">Esc, Start or tap to resume</p>
       </div>
     </div>

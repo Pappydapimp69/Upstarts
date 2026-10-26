@@ -1,4 +1,5 @@
-import { createWorld, hatchAs, step, TICK_DT, CARCASS } from './sim/world';
+import { createWorld, hatchAs, step, TICK_DT, CARCASS, type World } from './sim/world';
+import { describeSave, loadWorld, saveWorld } from './sim/save';
 import { browseAt } from './sim/flora';
 import { lerp, smooth, wrapAngle } from './sim/math';
 import { heightAt, waterDepthAt } from './sim/terrain';
@@ -27,7 +28,7 @@ import { initInput, readInput } from './input/input';
 
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
-const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
+let world: World = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
 const ui = new Ui();
 if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
 const view = new SceneView(document.body);
@@ -105,6 +106,51 @@ let started = false, paused = false;
 let pendingCall: Command['call'], pendingRespawn = false;
 ui.showIntro(true);
 
+// Saves (versioned, sim/save.ts): kept in this browser, written every 30 s and when the tab is hidden;
+// the pause card exports and imports them as files. ?adult and ?fast games are never saved over a real one.
+const SAVE_KEY = 'upstarts.save';
+const saving = !params.has('adult') && !params.has('fast');
+const readSave = (): string | null => {
+  try {
+    return localStorage.getItem(SAVE_KEY);
+  } catch {
+    return null;
+  }
+};
+function writeSave(): void {
+  if (!started || !saving) return;
+  try {
+    localStorage.setItem(SAVE_KEY, saveWorld(world));
+  } catch {
+    /* storage full or blocked: the game goes on unsaved */
+  }
+}
+setInterval(() => !paused && writeSave(), 30_000);
+window.addEventListener('pagehide', writeSave);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && writeSave());
+function useWorld(w: World): void {
+  world = w;
+  p = world.player;
+  useModel();
+  herrera.plant(p.x, p.z, p.yaw, rigScale());
+  prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
+  cam.snapBehind(p);
+}
+let pendingLoad: string | null = null;
+const saved = saving ? readSave() : null;
+ui.showContinue(saved ? describeSave(saved) : null);
+ui.onContinue(() => (pendingLoad = readSave()));
+ui.onExport(() => saveWorld(world));
+ui.onImport((text) => {
+  try {
+    useWorld(loadWorld(text));
+    writeSave();
+    return null;
+  } catch (e) {
+    return (e as Error).message;
+  }
+});
+
 // Fixed-step sim, free-running render, interpolated between the last two ticks.
 let prev = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
 let last = performance.now();
@@ -135,7 +181,19 @@ function frame(now: number): void {
   const inp = readInput();
   if (!started) {
     if (inp.nav) ui.move(inp.nav);
-    if (inp.confirm) {
+    if (inp.load && saved) pendingLoad = saved;
+    if (pendingLoad) {
+      try {
+        useWorld(loadWorld(pendingLoad));
+        audio.start();
+        started = true;
+        ui.showIntro(false);
+      } catch (e) {
+        ui.showContinue(null, (e as Error).message);
+      }
+      pendingLoad = null;
+      inp.confirm = false;
+    } else if (inp.confirm) {
       audio.start();
       if (ui.selected !== world.speciesId) {
         hatchAs(world, ui.selected);
