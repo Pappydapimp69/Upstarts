@@ -9,6 +9,7 @@ import { exposed } from './smallprey';
 import { browseAt } from './flora';
 import { PONDS, waterDepthAt } from './terrain';
 import { stageOf } from './growth';
+import { NEST, nestSiteOk } from './family';
 import { TICK_DT, type PlayerSlot, type World } from './world';
 
 export interface Objective {
@@ -120,6 +121,33 @@ function food(w: World, slot: PlayerSlot): Objective {
   return { key: 'search', say: 'Find food', sub: 'Hold {drink} away from water to sniff the wind for blood and carcasses.', at: null };
 }
 
+// Grown: find a mate, nest, guard the eggs, then the young (sim/family.ts).
+function family(w: World, slot: PlayerSlot): Objective | null {
+  const d = slot.dino, now = w.tick * TICK_DT;
+  const nest = w.nests.find((n) => n.owner === slot.entity);
+  if (nest && nest.eggs > 0) {
+    const far = Math.hypot(nest.x - d.x, nest.z - d.z), at = { x: nest.x, z: nest.z };
+    const thief = w.smalls.some((m) => m.kind === 'cynodont' && exposed(m) && Math.hypot(m.x - nest.x, m.z - nest.z) < 6);
+    if (thief && far > 5) return { key: 'eggsDanger', say: 'Something is at your eggs', sub: 'Get back to the nest: small cynodonts steal eggs that are left alone.', at };
+    const left = Math.max(0, nest.hatchAt - now), mm = Math.floor(left / 60), ss = Math.floor(left % 60);
+    return { key: 'guard', say: 'Guard your eggs', sub: `${nest.eggs} ${nest.eggs === 1 ? 'egg' : 'eggs'}, hatching in ${mm}:${String(ss).padStart(2, '0')}. Stay near: thieves come for eggs left alone.`, at: far > 8 ? at : null };
+  }
+  if (nest && nest.young > 0) {
+    return { key: 'young', say: 'Your young', sub: `${nest.young} at the nest, ${Math.round(nest.youngGrowth * 100)}% grown. If you die, you carry on as one of them.`, at: null };
+  }
+  if (d.mated) {
+    const fed = d.needs.hunger > NEST.needs && d.needs.thirst > NEST.needs;
+    const here = nestSiteOk(d.x, d.z, w.nests);
+    return { key: 'nest', say: 'Make a nest', at: null,
+      sub: !fed ? 'Eat and drink your fill first: laying a clutch takes a lot.'
+        : here ? 'Good ground for it. Hold {eat} to dig a scrape and lay.' : 'Find open dry ground, away from the ferns, the water and other nests, then hold {eat} to dig a scrape and lay.' };
+  }
+  const mate = w.mates.find((m) => m.for === slot.entity);
+  if (mate && mate.state === 'court') return { key: 'court', say: 'Stay close', sub: `One of your kind has come. Stay near it a little while.`, at: null };
+  if (mate && mate.state === 'come') return { key: 'mateComing', say: 'It heard you', sub: 'One of your kind is coming. Wait for it.', at: { x: mate.x, z: mate.z } };
+  return { key: 'mate', say: 'Find a mate', sub: 'Fully grown. Roar or call, and one of your kind may hear you and come.', at: null };
+}
+
 export function objectiveOf(w: World, slot: PlayerSlot = w.players[0]): Objective | null {
   const d = slot.dino, n = d.needs;
   if (!d.alive) return null;
@@ -146,6 +174,8 @@ export function objectiveOf(w: World, slot: PlayerSlot = w.players[0]): Objectiv
     const next = stageOf(Math.min(1, d.growth + 0.001)) === 'hatchling' ? 'a juvenile' : stageOf(d.growth) === 'juvenile' ? 'a sub-adult' : 'an adult';
     return { key: 'grow', say: `Grow into ${next}`, sub: `You grow while fed and watered. Keep both topped up. ${Math.round(d.growth * 100)}% grown.`, at: null };
   }
+  const fam = family(w, slot);
+  if (fam) return fam;
   const sp = d.species, big = d.body.mass >= SAUROSUCHUS.mass * SAUROSUCHUS.fearFrac;
   if (big) return { key: 'rule', say: 'Rule the valley', sub: 'Fully grown: even Saurosuchus runs from you now. Hunt it, or take down a Hyperodapedon.', at: null };
   if (sp.diet === 'rooter') return { key: 'rule', say: 'Live long', sub: 'Fully grown and armoured. Nothing here hunts an adult aetosaur; keep fed, and lie flat if one tries.', at: null };

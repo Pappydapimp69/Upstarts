@@ -31,7 +31,7 @@ export interface Save {
   nextId: number;
   sauroGoneAt: number;
   rng: Record<(typeof STREAMS)[number], number>;
-  players: { id: number; entity: number; speciesId: SpeciesId; lives: number; lastDeath: World['lastDeath']; dino: SavedDino }[];
+  players: { id: number; entity: number; speciesId: SpeciesId; lives: number; lastDeath: World['lastDeath']; generation?: number; dino: SavedDino }[];
   carcasses: World['carcasses'];
   herds: World['herds'];
   herbivores: World['herbivores'];
@@ -41,6 +41,8 @@ export interface Save {
   knocks: World['knocks'];
   counters: World['counters'];
   trails: World['trails'];
+  nests?: World['nests']; // added after the first saves: missing means none
+  mates?: World['mates'];
 }
 
 export function snapshot(w: World, now = 0): Save {
@@ -53,10 +55,10 @@ export function snapshot(w: World, now = 0): Save {
       const { species, body: _b, coat, ...rest } = s.dino;
       void _b;
       const saved = Object.fromEntries(Object.entries(coat).map(([k, a]) => [k, Array.from(a as Float32Array)])) as SavedCoat;
-      return { id: s.id, entity: s.entity, speciesId: s.speciesId, lives: s.lives, lastDeath: s.lastDeath, dino: { ...rest, coat: saved, species: species.id } };
+      return { id: s.id, entity: s.entity, speciesId: s.speciesId, lives: s.lives, lastDeath: s.lastDeath, generation: s.generation, dino: { ...rest, coat: saved, species: species.id } };
     }),
     carcasses: w.carcasses, herds: w.herds, herbivores: w.herbivores, sauros: w.sauros, smalls: w.smalls, grubs: w.grubs,
-    knocks: w.knocks, counters: w.counters, trails: w.trails,
+    knocks: w.knocks, counters: w.counters, trails: w.trails, nests: w.nests, mates: w.mates,
   });
 }
 
@@ -71,14 +73,18 @@ export function restore(raw: unknown): World | null {
   Object.assign(w, {
     tick: c.tick, growScale: c.growScale, nextId: c.nextId, sauroGoneAt: c.sauroGoneAt, carcasses: c.carcasses, herds: c.herds,
     herbivores: c.herbivores, sauros: c.sauros, smalls: c.smalls, grubs: c.grubs, knocks: c.knocks, counters: c.counters, trails: c.trails,
-    events: [],
+    nests: c.nests ?? [], mates: c.mates ?? [], events: [],
   });
   w.players.length = 0;
   for (const p of c.players) {
     const species = SPECIES[p.dino.species];
     const coat = Object.fromEntries(Object.entries(p.dino.coat).map(([k, a]) => [k, Float32Array.from(a)])) as unknown as Coat;
+    // Fields added since the first saves get their defaults.
     const dino = { ...p.dino, species, body: bodyOf(species, p.dino.growth), coat } as Dino;
-    w.players.push({ id: p.id, entity: p.entity, speciesId: p.speciesId, lives: p.lives, lastDeath: p.lastDeath, dino });
+    dino.mated ??= false;
+    dino.nestT ??= 0;
+    dino.hidden ??= 0;
+    w.players.push({ id: p.id, entity: p.entity, speciesId: p.speciesId, lives: p.lives, lastDeath: p.lastDeath, generation: p.generation ?? 1, dino });
   }
   return w;
 }

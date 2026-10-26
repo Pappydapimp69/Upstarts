@@ -29,6 +29,7 @@ import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
 import { FrameStats } from './render/frameStats';
 import { TrailView } from './render/trailView';
+import { FamilyView } from './render/familyView';
 import { loadSave, writeSave } from './render/saveStore';
 import type { SpeciesId } from './sim/species';
 import { bodyScale } from './sim/balance';
@@ -69,6 +70,8 @@ const coatView = new CoatView();
 view.scene.add(coatView.group);
 const trailView = new TrailView();
 view.scene.add(trailView.group);
+const familyView = new FamilyView();
+view.scene.add(familyView.group);
 // Fight feel (the Dlist demo's): a hit-stop freezes your own animation for a few hundredths of a second when a
 // bite lands, the head shakes to tear, and a bite taken makes it flinch away from that side.
 const fx = { hold: 0, heldBiteT: 0, biteHit: false, hurtT: 9, hurtSide: 0, hurtK: 0, jolt: 0 };
@@ -305,6 +308,7 @@ function frame(now: number): void {
   blood.update(dt);
   coatView.update(p, herrera, dt);
   trailView.update(world.trails, world.tick * TICK_DT, p.alive && p.act === 'sniff', dt);
+  familyView.update(world.nests, world.mates, a, dt);
   view.setTime(dayTime(world.tick * TICK_DT));
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);

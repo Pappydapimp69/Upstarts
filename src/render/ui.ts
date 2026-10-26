@@ -272,8 +272,18 @@ export class Ui {
         ['Reached', `${cap(stageOf(L.growth))} ${d.species.name} (${Math.round(L.growth * 100)}%)`],
         ['Longest life', fmt(this.records.longestLife)],
         ['Lives', String(this.records.lives)],
+        ...(w.players[0].generation > 1 ? [['Your line', `generation ${w.players[0].generation}`]] : []),
       ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
     }
     this.el('death').hidden = d.alive;
+    // Dead with young at the nest: hatching again as that species carries on as one of them.
+    if (!d.alive) {
+      const slot = w.players[0], nest = w.nests.find((n) => n.owner === slot.entity && n.young > 0), go = BTN[this.device].go;
+      const touch = this.device === 'touch';
+      this.el('deathCta').textContent = nest && this.selected === nest.species
+        ? `${touch ? 'Tap' : go} to carry on as one of your ${nest.young} young (generation ${slot.generation + 1})`
+        : nest ? `${touch ? 'Tap' : go} to hatch as a new ${SPECIES[this.selected].name}. Pick ${SPECIES[nest.species].name} to carry on as your young`
+        : touch ? 'Tap a dinosaur to hatch again' : `Left and right to choose · ${go} to hatch again`;
+    }
   }
 }

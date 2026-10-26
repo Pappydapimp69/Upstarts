@@ -12,6 +12,7 @@ import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
 import { concealment } from './cover';
+import { eggKg, NEST, nestSiteOk, newMate, stepMate, stepNest, type Mate, type Nest } from './family';
 import { layTrails, newTrails, readTrail, type TrailLayer, type Trails } from './trails';
 import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
 import { biteCap, biteDamage } from './combat';
@@ -118,6 +119,7 @@ export interface PlayerSlot {
   dino: Dino;
   lives: number;
   lastDeath: Death | null;
+  generation: number; // 1 for a fresh hatchling; one more each time it carries on as its own young
 }
 
 export interface Death {
@@ -156,6 +158,8 @@ export interface World {
   knocks: Knock[];
   counters: Counter[];
   trails: Trails; // scent and blood on the ground
+  nests: Nest[];
+  mates: Mate[]; // one of each player's kind, out in the valley (sim/family.ts)
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
@@ -164,7 +168,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale, growScale: 1,
     herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs,
-    knocks: [], counters: [], trails: newTrails(),
+    knocks: [], counters: [], trails: newTrails(), nests: [], mates: [],
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -406,7 +410,7 @@ function mouth(x: number, z: number, yaw: number, reach: number, up: number): { 
 // Join a player: a new slot with a fresh hatchling. Returns the slot.
 export function addPlayer(w: World, speciesId: SpeciesId): PlayerSlot {
   const id = w.players.length;
-  const slot: PlayerSlot = { id, entity: PLAYER_ID - id, speciesId, dino: spawnDino(w, speciesId), lives: 1, lastDeath: null };
+  const slot: PlayerSlot = { id, entity: PLAYER_ID - id, speciesId, dino: spawnDino(w, speciesId), lives: 1, lastDeath: null, generation: 1 };
   slot.dino.owner = id;
   w.players.push(slot);
   return slot;
@@ -748,6 +752,45 @@ function separateBodies(w: World): void {
   }
 }
 
+// Family (sim/family.ts): a grown, paired, well-fed animal with no clutch already in the ground can nest.
+function canNest(w: World, slot: PlayerSlot): boolean {
+  const d = slot.dino, n = d.needs;
+  return d.growth >= 1 && d.mated && n.hunger > NEST.needs && n.thirst > NEST.needs && !w.nests.some((k) => k.owner === slot.entity && k.eggs > 0);
+}
+function layClutch(w: World, slot: PlayerSlot): void {
+  const d = slot.dino, now = w.tick * TICK_DT;
+  w.nests.push({
+    id: w.nextId++, owner: slot.entity, species: d.species.id, x: d.x, z: d.z, eggs: NEST.clutch[d.species.id], young: 0, youngGrowth: 0,
+    hatchAt: now + NEST.incubate / w.growScale, taken: 0,
+  });
+  d.needs.hunger = Math.max(0, d.needs.hunger - NEST.layCost);
+  d.mated = false;
+  d.nestT = 0;
+}
+function stepFamily(w: World, heard: SoundEvent[], dt: number): void {
+  const now = w.tick * TICK_DT;
+  // Each player with a grown animal has one of its kind out in the valley; it comes when it hears the call.
+  w.mates = w.mates.filter((m) => w.players.some((s) => s.entity === m.for && s.dino.species.id === m.species));
+  for (const s of w.players) {
+    const d = s.dino;
+    if (d.alive && d.growth >= 1 && !w.mates.some((m) => m.for === s.entity)) w.mates.push(newMate(w.nextId++, d.species.id, s.entity, d.x, d.z, w.rng.ai));
+  }
+  for (const m of w.mates) {
+    const s = w.players.find((k) => k.entity === m.for)!, d = s.dino, was = m.state;
+    const paired = stepMate(m, d.alive && d.growth >= 1 ? d : null, heard, w.rng.ai, dt);
+    // It calls back as it sets off, and again when they pair.
+    if ((was === 'roam' && m.state === 'come') || paired) {
+      const sp = SPECIES[m.species];
+      w.events.push({ kind: 'call', who: 'prey', id: m.id, call: sp.calls, x: m.x, y: groundY(m.x, m.z) + 0.9 * sp.hip, z: m.z, level: callLevel(sp.calls, sp.mass) });
+    }
+    if (paired) d.mated = true;
+  }
+  for (const n of w.nests) {
+    if (stepNest(n, now, dt, w.growScale, w.rng.ai) === 'hatched') w.events.push({ kind: 'call', who: 'player', id: n.id, call: 'chirp', x: n.x, y: groundY(n.x, n.z) + 0.1, z: n.z, level: callLevel('chirp', 0.3) });
+  }
+  w.nests = w.nests.filter((n) => n.eggs > 0 || n.young > 0);
+}
+
 // A player bleeds for a while after being bitten (as long as a bitten animal does).
 const bleeding = (d: Dino): boolean => d.alive && d.hitT < BITE.bleed;
 
@@ -763,8 +806,20 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
   if (!d.alive) {
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
-      if (cmd.species) slot.speciesId = cmd.species;
-      slot.dino = spawnDino(w, slot.speciesId);
+      // Carry on as one of its young if it left any (and the player hasn't chosen another species); else a new line.
+      const nest = w.nests.find((n) => n.owner === slot.entity && n.young > 0 && (!cmd.species || cmd.species === n.species));
+      if (nest) {
+        slot.speciesId = nest.species;
+        const a = w.rng.spawn() * Math.PI * 2;
+        slot.dino = createDino(SPECIES[nest.species], nest.x + Math.sin(a) * 0.6, nest.z + Math.cos(a) * 0.6, a, Math.max(w.startGrowth, nest.youngGrowth));
+        slot.dino.needs.hunger = slot.dino.needs.thirst = 0.7;
+        nest.young--;
+        slot.generation++;
+      } else {
+        if (cmd.species) slot.speciesId = cmd.species;
+        slot.dino = spawnDino(w, slot.speciesId);
+        slot.generation = 1;
+      }
       slot.dino.owner = slot.id;
       slot.lives++;
     }
@@ -854,11 +909,18 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
         // Nothing to eat but ferns: an omnivore browses where it stands.
         act = 'browse';
         ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
+      } else if (canNest(w, slot) && nestSiteOk(d.x, d.z, w.nests)) {
+        // Paired and well fed on open dry ground: dig a scrape and lay.
+        act = 'dig';
+        ov = { yaw: d.yaw, target: 0, turnCap: 0, steer: false };
+        d.nestT += dt;
+        if (d.nestT >= NEST.dig) layClutch(w, slot);
       } else if (defend && d.species.attack === 'none') {
         // Nothing to eat and nothing there: a non-biter still swings (a warning, and it shows the move).
         if (startStrike(d, defend, Math.PI)) act = defend;
       }
     }
+    if (act !== 'dig') d.nestT = 0;
     if (d.snap && d.biteT >= BITE.snap) {
       d.snap = false;
       snapJaws(w, slot);
@@ -913,7 +975,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
       d.callT = 0;
       d.callDur = c.duration + (c.notes && c.notes > 1 ? (c.gap ?? 0.3) * (c.notes - 1) : 0);
       const level = callLevel(style, d.body.mass);
-      w.events.push({ kind: 'call', who: 'player', call: style, ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.9 * d.body.hip), level });
+      w.events.push({ kind: 'call', who: 'player', id: slot.entity, call: style, ...mouth(d.x, d.z, d.yaw, d.body.snout, 0.9 * d.body.hip), level });
       const now = w.tick * TICK_DT;
       for (const h of w.herbivores) {
         if (d.body.mass >= HYPERODAPEDON.ignoreBelow && heardAt(level, Math.hypot(h.x - d.x, h.z - d.z)) >= HERD_HEARS) {
@@ -1046,9 +1108,19 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
     footfalls(w, h, h.id, h.x, h.z, HYPERODAPEDON.mass, h.speed, 0.9, 4, dt);
   }
   for (const m of w.smalls) {
-    stepSmall(m, preds, w.rng.prey, dt, now, heard, w.carcasses, (id, kg) => {
+    // Carcasses, and unguarded eggs: the small cynodonts take both.
+    stepSmall(m, preds, w.rng.prey, dt, now, heard, [...w.carcasses, ...w.nests.filter((n) => n.eggs > 0).map((n) => ({ id: n.id, x: n.x, z: n.z, meat: n.eggs }))], (id, kg) => {
       const c = w.carcasses.find((k) => k.id === id);
       if (c) c.meat = Math.max(0, c.meat - kg);
+      const n = w.nests.find((k) => k.id === id);
+      if (n) {
+        n.taken += kg;
+        const egg = eggKg(SPECIES[n.species].mass);
+        while (n.taken >= egg && n.eggs > 0) {
+          n.taken -= egg;
+          n.eggs--;
+        }
+      }
     });
     if (m.kind === 'exaeretodon' && exposed(m)) footfalls(w, m, m.id, m.x, m.z, m.mass, m.speed, 0.7 * Math.cbrt(m.mass / 50), 4, dt);
     if (m.state === 'gone' && m.stateT > SMALL[m.kind].respawn) respawnSmall(m, w.rng.prey);
@@ -1076,6 +1148,7 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   }
 
   separateBodies(w);
+  stepFamily(w, heard, dt);
 
   // Trails: scent from everything on the move, blood from anything bleeding (you too, for a while after a bite).
   const layers: TrailLayer[] = [];

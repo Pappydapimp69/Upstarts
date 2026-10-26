@@ -80,6 +80,8 @@ export interface Dino {
   lungeT: number; // s since an ambush lunge from the water began (9: none)
   grip: number; // holding on to what it bit (entity id), -1 none: a water ambusher's grip, Herrerasaurus's grab
   strike: Strike | null; // a kick or tail swipe in progress
+  mated: boolean; // paired with one of its own kind, and not laid since (sim/family.ts)
+  nestT: number; // s spent digging a nest so far
   hidden: number; // how hidden it is in the plants, 0 in the open .. 1 out of sight (sim/cover.ts; set by the world)
   strikeT: number; // s since the last one started
 }
@@ -114,7 +116,7 @@ export function createDino(species: Species, x: number, z: number, yaw: number, 
   return {
     species, owner: -1, growth, body: bodyOf(species, growth), x, y: groundAt(x, z), z, yaw, speed: 0, yawRate: 0, accel: 0, grade: 0, stamina: 1,
     needs: fullNeeds(), act: 'none', alive: true, age: 0, biteT: 9, hitT: 99, callT: 9, callDur: 0, gait: 0, sniff: null, trail: null, egg: 0,
-    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null, swim: 0, under: 0, chill: 0, lungeT: 9, grip: -1, strike: null, strikeT: 9, hidden: 0,
+    jump: null, air: 0, resting: false, rest: 0, jumpLanded: 0, snap: false, scrambled: 0, coat: newCoat(), fall: null, fallThud: false, fallStart: null, swim: 0, under: 0, chill: 0, lungeT: 9, grip: -1, strike: null, strikeT: 9, mated: false, nestT: 0, hidden: 0,
   };
 }
 
