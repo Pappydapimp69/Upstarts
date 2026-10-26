@@ -206,6 +206,13 @@ export class AudioLayer {
       case 'hit': {
         const share = ev.share ?? 0.3;
         this.at(S.hit, ev);
+        if (ev.blow) {
+          // A kick or a tail swipe: a dull heavy thud on the body, the tail's armour plates slapping on with it.
+          S.hit.step({ mass: 60 + 140 * share, speed: ev.blow === 'swipe' ? 5 : 4, surface: 'packedDirt', claws: false, gain: 1.1 + share });
+          if (ev.blow === 'swipe') S.hit.step({ mass: 8, speed: 4, surface: 'sandstone', claws: false, gain: 0.7, delay: 0.015 });
+          else S.hit.step({ mass: 3, speed: 3, surface: 'packedDirt', claws: true, gain: 0.5, delay: 0.02 });
+          break;
+        }
         S.hit.step({ mass: 20 + 60 * share, speed: 3, surface: 'mud', claws: false, gain: 0.9 + share });
         S.hit.step({ mass: 2, speed: 2, surface: 'packedDirt', claws: false, gain: 0.5, delay: 0.03 });
         break;

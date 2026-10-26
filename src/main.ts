@@ -68,6 +68,7 @@ view.scene.add(trailView.group);
 // Fight feel (the Dlist demo's): a hit-stop freezes your own animation for a few hundredths of a second when a
 // bite lands, the head shakes to tear, and a bite taken makes it flinch away from that side.
 const fx = { hold: 0, heldBiteT: 0, biteHit: false, hurtT: 9, hurtSide: 0, hurtK: 0, jolt: 0 };
+const blowText = (blow: 'kick' | 'swipe', left: number): string => (left <= 0 ? 'Killed it' : blow === 'kick' ? 'Kicked it' : 'Hit it with the tail');
 const woundText = (left: number): string => left <= 0 ? 'Killed it' : left > 0.6 ? 'Bit it, a light wound' : left > 0.3 ? 'Bit it, badly wounded' : 'Bit it, nearly finished';
 
 let p = world.player;
@@ -243,11 +244,11 @@ function frame(now: number): void {
       if (ev.kind === 'hit') {
         const yaw = ev.yaw ?? 0, share = ev.share ?? 0.3;
         if (ev.who === 'player') {
-          fx.biteHit = true;
+          fx.biteHit = !ev.blow; // the tearing head shake is for bites
           fx.hold = 0.06 + 0.06 * share;
           fx.heldBiteT = p.biteT;
           fx.jolt = Math.max(fx.jolt, 0.3 + 0.6 * share);
-          ui.flash(woundText(ev.left ?? 1));
+          ui.flash(ev.blow ? blowText(ev.blow, ev.left ?? 1) : woundText(ev.left ?? 1));
         }
         if (ev.target === world.players[0].entity) {
           const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw); // its right
@@ -257,7 +258,8 @@ function frame(now: number): void {
           if (ev.who === 'prey') ui.flash('It bit back');
         }
         const big = ev.who === 'player' ? 1 : 1.4;
-        blood.spray(ev.x, ev.y, ev.z, yaw, share, big * Math.max(0.3, Math.min(1.5, ev.who === 'player' ? p.body.size : 1)));
+        // A kick's claws can draw a little blood; a tail swipe is a blunt blow.
+        if (ev.blow !== 'swipe') blood.spray(ev.x, ev.y, ev.z, yaw, ev.blow ? share * 0.4 : share, big * Math.max(0.3, Math.min(1.5, ev.who === 'player' ? p.body.size : 1)));
       }
       // Haptic jolts: your bite landing, and being bitten (harder, longer).
       if (ev.kind === 'hit' && ev.who === 'player') rumble.hit(0.45, 0.7, 90, performance.now(), inputState.device === 'touch');

@@ -14,13 +14,17 @@ export class SceneView {
   private readonly lightDir = SUN_DIR.clone(); // toward whichever light casts shadows: the sun, or the moon at night
 
   constructor(parent: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Phones (a coarse pointer): fewer pixels and a smaller shadow map; filling pixels is what limits them
+    // (docs/PERF.md). ?hq forces the full settings.
+    const phone = matchMedia('(pointer: coarse)').matches && !new URLSearchParams(location.search).has('hq');
+    this.renderer = new THREE.WebGLRenderer({ antialias: !phone });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, phone ? 1.5 : 2));
     this.renderer.domElement.id = 'view';
     setupRenderer(this.renderer);
     parent.prepend(this.renderer.domElement);
 
     ({ sun: this.sun, hemi: this.hemi, skyMat: this.skyMat } = buildSkyAndLights(this.scene, this.renderer));
+    if (phone) this.sun.shadow.mapSize.set(1024, 1024);
     buildTerrain(this.scene);
     buildWater(this.scene);
     buildPlants(this.scene);

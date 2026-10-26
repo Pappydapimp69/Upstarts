@@ -18,9 +18,13 @@ calls, triangles and the pixel ratio. A low fps with small numbers there means t
 - **Fill rate, likely the real phone limit (not measurable here):** 2x pixel ratio with antialiasing, 2048
   PCF-soft shadows, and procedural skin shaders (Voronoi scales, 27-cell loops) on the player.
 
-## Levers, cheapest first (not built)
+## Levers, cheapest first
 
-1. Pixel ratio 1.5 on touch devices, and a lower shadow map (1024) there.
+1. Pixel ratio 1.5 on touch devices, no antialiasing, and a 1024 shadow map there. **Done** (2026-10-26; `?hq` for
+   the full settings).
 2. Stop small plants casting shadows (ferns and the 585-instance plant), halving their triangles.
 3. Merge each herd animal's parts into one mesh per animal (draw calls).
 4. Skin shader detail off beyond a few metres on phones (the shader already fades it by distance).
+
+The understory added 2026-10-26 (low ferns, shrubs, cycads, reeds) roughly doubled the triangles, to about 1.2 M,
+none of it casting shadows.
