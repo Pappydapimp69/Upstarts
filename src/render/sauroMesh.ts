@@ -2,11 +2,13 @@ import * as THREE from 'three';
 import { damp, smooth } from '../sim/math';
 import { heightAt } from '../sim/terrain';
 import type { Sauro } from '../sim/saurosuchus';
-import { animateLegs, buildSaurosuchus, type Body } from './creatures';
+import { animateLegs, type Body } from './creatures';
+import { buildKitSaurosuchus } from './kitCreatures';
 
-// Saurosuchus: the Dlist demo's procedural model (creatures.ts), animated from the sim state.
+// Saurosuchus: Brain's creature kit model (kitCreatures.ts, one skinned lofted body), animated from the sim state.
+// The older stacked-sweep model is still buildSaurosuchus in creatures.ts.
 class SMesh {
-  readonly b: Body = buildSaurosuchus();
+  readonly b: Body = buildKitSaurosuchus();
   readonly root = this.b.root;
   phase = 0;
   px = 0; pz = 0; pyaw = 0;

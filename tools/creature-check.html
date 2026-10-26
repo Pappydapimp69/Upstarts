@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Creature Check</title>
+<style>body{margin:0;background:#e9e2d4;font:12px system-ui}#wrap{position:relative;width:max-content}canvas{display:block}.lab{position:absolute;padding:3px 7px;font-weight:600}</style></head>
+<body><div id="wrap"><canvas id="c"></canvas></div>
+<script type="module">
+// Dev-only (npm run dev, then /tools/creature-check.html): the NPC models as the game animates them,
+// the stacked-sweep originals beside the kit-built versions. Rows: model; columns: poses.
+import * as THREE from 'three';
+import { animateLegs, buildSaurosuchus } from '../src/render/creatures';
+import { buildKitSaurosuchus } from '../src/render/kitCreatures';
+const rows = [['Saurosuchus (sweeps)', buildSaurosuchus], ['Saurosuchus (kit)', buildKitSaurosuchus]];
+const poses = [['side, stride', [1, 0.15, 0], 0.25, 0.5, 0, 0], ['3/4, other stride', [0.75, 0.35, 0.75], 0.75, 0.5, 0, 0], ['bite', [0.6, 0.15, 0.9], 0, 0, 0, 0.7], ['asleep', [0.8, 0.5, 0.6], 0, 0, 1, 0]];
+const W = 360, H = 240, r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+r.setSize(W * poses.length, H * rows.length); r.setScissorTest(true); r.toneMapping = THREE.ACESFilmicToneMapping; r.shadowMap.enabled = true;
+const labels = [];
+rows.forEach(([name, build], ri) => poses.forEach(([pn, dir, phase, swing, sleep, jaw], pi) => {
+  const s = new THREE.Scene(); s.background = new THREE.Color('#e9e2d4');
+  s.add(new THREE.HemisphereLight(0xdfe8ff, 0x5a4a38, 1.2)); const sun = new THREE.DirectionalLight(0xfff1dc, 2.4); sun.position.set(4, 8, 5); sun.castShadow = true; s.add(sun);
+  Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5 });
+  const g = new THREE.Mesh(new THREE.CircleGeometry(8, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#cbbd9f', roughness: 0.95 })); g.receiveShadow = true; s.add(g);
+  const b = build(); s.add(b.root);
+  animateLegs(b, phase, swing, sleep); b.jaw.rotation.x = jaw; b.root.position.y = -0.62 * sleep;
+  const ctr = new THREE.Vector3(0, 0.9, 0), cam = new THREE.PerspectiveCamera(32, W / H, 0.05, 100);
+  cam.position.copy(ctr).addScaledVector(new THREE.Vector3(...dir).normalize(), pn === 'bite' ? 4.2 : 9); cam.lookAt(pn === 'bite' ? new THREE.Vector3(0, 1.2, 1.6) : ctr);
+  const y = H * (rows.length - 1 - ri);
+  r.setViewport(pi * W, y, W, H); r.setScissor(pi * W, y, W, H); r.render(s, cam);
+  labels.push(`<div class="lab" style="left:${pi * W}px;top:${ri * H}px">${name} · ${pn}</div>`);
+}));
+document.getElementById('wrap').insertAdjacentHTML('beforeend', labels.join(''));
+// Cost per animal: triangles and draw calls (meshes), and the first build (later ones are clones).
+const cost = (build) => { const t0 = performance.now(), b = build(), ms = performance.now() - t0; let tris = 0, draws = 0;
+  b.root.traverse((o) => { if (o.isMesh) { draws++; const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } }); return { tris, draws, ms }; };
+window.__checks = rows.map(([n, build]) => { cost(build); const c = cost(build); return `${n}: ${Math.round(c.tris)} triangles, ${c.draws} draw calls, ${c.ms.toFixed(1)} ms a clone`; });
+window.__done = true;
+</script></body></html>
