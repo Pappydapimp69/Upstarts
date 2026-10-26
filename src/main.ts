@@ -6,7 +6,8 @@ import { waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
 import { HerreraAnimator } from './render/dlist/animator.js';
 import { isQuad, QuadAnimator } from './render/quadruped';
-import { fernCut } from './render/dlist/env.js';
+import { fernCut, showSeason } from './render/dlist/env.js';
+import { dryness } from './sim/season';
 import { dayTime } from './sim/clock';
 import { isSprinting, type Command } from './sim/dino';
 import { FollowCamera } from './render/camera';
@@ -307,6 +308,7 @@ function frame(now: number): void {
     strike: p.strike, holding: p.grip >= 0, grabber: p.species.attack === 'grab' }, held ? 0 : dt);
   blood.update(dt);
   coatView.update(p, herrera, dt);
+  showSeason(dryness(world.tick * TICK_DT));
   trailView.update(world.trails, world.tick * TICK_DT, p.alive && p.act === 'sniff', dt);
   familyView.update(world.nests, world.mates, a, dt);
   view.setTime(dayTime(world.tick * TICK_DT));

@@ -4,7 +4,13 @@ import { lerp, smooth } from './math';
 // Greybox valley: rolling floor that rises into hills past ~40 m from the centre,
 // with the demo's pond carved into it.
 export const MAP_RADIUS = 90;
-export const WATER_Y = 0;
+// The pond's full level, which its basin is carved to, and the water's level now: lower in the dry season. WATER_Y is
+// a live binding the world sets each tick from the season (sim/season.ts), so everything reading it follows.
+export const POND_Y = 0;
+export let WATER_Y = POND_Y;
+export function setWaterLevel(y: number): void {
+  WATER_Y = y;
+}
 export const TOO_DEEP = 1.12; // deeper than this and it won't wade further
 
 export interface Pond {
@@ -36,7 +42,7 @@ export function heightAt(x: number, z: number): number {
   for (const w of PONDS) {
     const d = Math.hypot(x - w.x, z - w.z);
     h = lerp(h, 0.36 + (h - 0.36) * 0.2, 1 - smooth(w.r + 2, w.r + w.flat, d));
-    h = lerp(h, WATER_Y - w.depth, 1 - smooth(w.r * 0.2, w.r + 1.5, d));
+    h = lerp(h, POND_Y - w.depth, 1 - smooth(w.r * 0.2, w.r + 1.5, d));
   }
   for (const m of MUDS) {
     const d = Math.hypot(x - m.x, z - m.z);

@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { clamp, lerp, smooth } from '../../sim/math';
 import { fbm, vnoise } from '../../sim/noise';
 import { rng } from '../../sim/rng';
-import { heightAt, MUDS, MUD_Y, PONDS, SPAWNS, WATER_Y, MAP_RADIUS } from '../../sim/terrain';
+import { heightAt, MUDS, MUD_Y, PONDS, POND_Y, SPAWNS, MAP_RADIUS, WATER_Y } from '../../sim/terrain';
 import { TREES } from '../../sim/flora';
 import { SHRUBS } from '../../sim/cover';
 import { groundAt } from '../../sim/ground';
@@ -143,8 +143,8 @@ export function buildTerrain(scene) {
     }
     for (const w of PONDS) {
       const dp = Math.hypot(x - w.x, z - w.z);
-      if (dp < w.r + 5) c.lerp(cBank, (1 - smooth(0.0, 0.45, h - WATER_Y)) * (1 - smooth(w.r, w.r + 5, dp)));
-      if (h < WATER_Y && dp < w.r + 2) c.lerp(cUnder, smooth(0, -0.4, h));
+      if (dp < w.r + 5) c.lerp(cBank, (1 - smooth(0.0, 0.45, h - POND_Y)) * (1 - smooth(w.r, w.r + 5, dp)));
+      if (h < POND_Y && dp < w.r + 2) c.lerp(cUnder, smooth(0, -0.4, h));
     }
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
@@ -193,9 +193,18 @@ export function buildWater(scene) {
   waterMat.customProgramCacheKey = () => 'water-v1';
   for (const W of PONDS) {
     const g = new THREE.CircleGeometry(W.r + 2, 96); g.rotateX(-Math.PI / 2);
-    const w = new THREE.Mesh(g, waterMat); w.position.set(W.x, WATER_Y, W.z); w.receiveShadow = true; w.renderOrder = 2;
+    const w = new THREE.Mesh(g, waterMat); w.position.set(W.x, POND_Y, W.z); w.receiveShadow = true; w.renderOrder = 2;
     scene.add(w);
+    waterMeshes.push(w);
   }
+}
+// The season (sim/season.ts) on screen: the water at its level now (the banks hide the rest of the disc, so the pond
+// shrinks), and the plants browning toward the height of the dry.
+const waterMeshes = [], seasonMats = [];
+const DRY_TINT = new THREE.Color(1.0, 0.82, 0.55);
+export function showSeason(dry) {
+  for (const w of waterMeshes) w.position.y = WATER_Y;
+  for (const m of seasonMats) m.color.setRGB(1, 1, 1).lerp(DRY_TINT, 0.8 * dry);
 }
 
 /* ============================== plants & rocks ============================== */
@@ -332,7 +341,7 @@ function buildUnderstory(scene, fernMat, nearSpawn) {
   const R = rng(20261026);
   const ok = (x, z, pad = 0.3) => {
     const h = heightAt(x, z);
-    return h > WATER_Y + 0.1 && Math.hypot(x, z) < 88 && !nearSpawn(x, z, 3.5) && groundAt(x, z) <= h + 0.05
+    return h > POND_Y + 0.1 && Math.hypot(x, z) < 88 && !nearSpawn(x, z, 3.5) && groundAt(x, z) <= h + 0.05
       && !MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.2)
       && !TREES.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + pad);
   };
@@ -395,12 +404,13 @@ export function buildPlants(scene) {
   const fernA = fernGeometry(rng(11), 9, 0.8, 1.25, new THREE.Color('#3b5424'), new THREE.Color('#78893f'));
   const fernB = fernGeometry(rng(12), 7, 0.6, 1.0, new THREE.Color('#465a26'), new THREE.Color('#8a8a45'), 0.8, 0.8, 0.2);
   const fernMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, side: THREE.DoubleSide, envMapIntensity: 0.5 });
+  seasonMats.push(fernMat);
   addWind(fernMat, 0.045, 'fern', true);
   const la = [], lb = [];
   for (let i = 0; i < 2400 && la.length + lb.length < 1300; i++) {
     const [x, z] = ringPoint(3, 80);
     const h = heightAt(x, z);
-    if (h < WATER_Y + 0.12 || nearSpawn(x, z, 3) || MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.5) || groundAt(x, z) > h + 0.05) continue;
+    if (h < POND_Y + 0.12 || nearSpawn(x, z, 3) || MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.5) || groundAt(x, z) > h + 0.05) continue;
     const clump = fbm(x * 0.09, z * 0.09, 71);
     if (R() > smooth(0.35, 0.6, clump) + 0.12) continue;
     (R() < 0.55 ? la : lb).push({ x, y: h - 0.03, z, s: lerp(0.65, 1.45, R()), ry: R() * 6.28 });
@@ -424,7 +434,7 @@ export function buildPlants(scene) {
     const W = PONDS[(R() * PONDS.length) | 0], a = R() * 6.28, d = lerp(W.r - 2.6, W.r + 3.2, R());
     const x = W.x + Math.cos(a) * d, z = W.z + Math.sin(a) * d;
     const h = heightAt(x, z);
-    if (h < WATER_Y - 0.3 || nearSpawn(x, z, 5)) continue;
+    if (h < POND_Y - 0.3 || nearSpawn(x, z, 5)) continue;
     hl.push({ x, y: h - 0.05, z, s: lerp(0.75, 1.3, R()), ry: R() * 6.28 });
   }
   // More (owner: more vegetation): thicker reed beds round the pond and the wet edge of the mud pit. Their own
@@ -434,7 +444,7 @@ export function buildPlants(scene) {
     const W = HR() < 0.75 ? PONDS[(HR() * PONDS.length) | 0] : MUDS[0], a = HR() * 6.28, d = lerp(W.r - 1.5, W.r + 4.5, HR());
     const x = W.x + Math.cos(a) * d, z = W.z + Math.sin(a) * d;
     const h = heightAt(x, z);
-    if (h < WATER_Y - 0.3 || nearSpawn(x, z, 5) || groundAt(x, z) > h + 0.05 || hl.some((o) => Math.hypot(o.x - x, o.z - z) < 0.5)) continue;
+    if (h < POND_Y - 0.3 || nearSpawn(x, z, 5) || groundAt(x, z) > h + 0.05 || hl.some((o) => Math.hypot(o.x - x, o.z - z) < 0.5)) continue;
     hl.push({ x, y: h - 0.05, z, s: lerp(0.6, 1.25, HR()), ry: HR() * 6.28 });
   }
   scatter(scene, horsetailGeo, hMat, hl);
@@ -474,6 +484,7 @@ export function buildPlants(scene) {
   scatter(scene, mergeColored(dParts), conMat, dl);
   const crownMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, side: THREE.DoubleSide, envMapIntensity: 0.5 });
   addWind(crownMat, 0.012, 'crown');
+  seasonMats.push(crownMat);
   scatter(scene, crown, crownMat, dl);
 
   buildUnderstory(scene, fernMat, nearSpawn);

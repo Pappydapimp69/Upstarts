@@ -7,6 +7,7 @@ import { maxHp } from '../sim/combat';
 import { SPECIES, SPECIES_ORDER, type SpeciesId } from '../sim/species';
 import type { Objective } from '../sim/objective';
 import type { TrailRead } from '../sim/trails';
+import { seasonName } from '../sim/season';
 import { onDevice, pressConfirm, state as inputState, type Device } from '../input/input';
 
 // Records are the only thing that outlives a creature (D13). Kept in this browser.
@@ -191,7 +192,7 @@ export class Ui {
     }
     const stage = stageOf(d.growth);
     document.querySelector('.binomial')!.textContent = d.species.binomial;
-    this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))} · Ischigualasto, about 231 million years ago`;
+    this.el('meta').textContent = `${cap(stage)} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))}, ${seasonName(w.tick * TICK_DT)} · Ischigualasto, about 231 million years ago`;
 
     const n = d.needs;
     const v: Record<string, number> = { health: n.health, hunger: n.hunger, thirst: n.thirst, stamina: d.stamina, growth: d.growth };

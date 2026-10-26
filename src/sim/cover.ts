@@ -1,6 +1,6 @@
 import { lerp, smooth } from './math';
 import { rng } from './rng';
-import { heightAt, MUDS, PONDS, SPAWNS, WATER_Y } from './terrain';
+import { heightAt, MUDS, PONDS, POND_Y, SPAWNS } from './terrain';
 import { browseAt, TREES } from './flora';
 import { groundAt } from './ground';
 
@@ -24,7 +24,7 @@ function build(): Shrub[] {
   const out: Shrub[] = [];
   const ok = (x: number, z: number, pad: number, gap: number): boolean => {
     const h = heightAt(x, z);
-    return h > WATER_Y + 0.1 && Math.hypot(x, z) < 88 && !SPAWNS.some((p) => Math.hypot(x - p.x, z - p.z) < 3.5) && groundAt(x, z) <= h + 0.05
+    return h > POND_Y + 0.1 && Math.hypot(x, z) < 88 && !SPAWNS.some((p) => Math.hypot(x - p.x, z - p.z) < 3.5) && groundAt(x, z) <= h + 0.05
       && !MUDS.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.2) && !PONDS.some((w) => Math.hypot(x - w.x, z - w.z) < w.r + 0.5)
       && !TREES.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + pad) && !out.some((o) => Math.hypot(o.x - x, o.z - z) < gap);
   };

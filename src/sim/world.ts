@@ -5,7 +5,8 @@ import { ectoGap, NEEDS, needPace, stepNeeds } from './needs';
 import { browseAt, pushOutOfTrees } from './flora';
 import { groundAt, pushOutOfRocks, surfaceAt, TIER } from './ground';
 import { bodyScale } from './balance';
-import { heightAt, PONDS, SPAWNS, TOO_DEEP, WATER_Y, waterDepthAt } from './terrain';
+import { heightAt, PONDS, POND_Y, setWaterLevel, SPAWNS, TOO_DEEP, WATER_Y, waterDepthAt } from './terrain';
+import { dryness, SEASON } from './season';
 import { SPECIES, type SpeciesId } from './species';
 import { clamp, lerp, smooth, wrapAngle } from './math';
 import { rng } from './rng';
@@ -225,7 +226,7 @@ function dry(x: number, z: number): boolean {
 // Herds wander between grazing grounds, and one trip in three goes down to the pond to drink: that is where the
 // water's ambushers wait (Proterochampsa).
 function pickGoal(w: World, herd: Herd): void {
-  if (w.rng.herd() < 1 / 3) {
+  if (w.rng.herd() < (1 / 3) * lerp(1, SEASON.herdWater, dryness(w.tick * TICK_DT))) {
     const P = PONDS[0], a = w.rng.herd() * Math.PI * 2;
     for (let r = P.r; r < P.r + 6; r += 0.5) {
       const x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r;
@@ -902,7 +903,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
           if (grub.dug >= GRUB.dig) {
             feed(d, GRUB.kg);
             grub.dug = 0;
-            grub.readyAt = now + GRUB.respawn;
+            grub.readyAt = now + GRUB.respawn * lerp(1, SEASON.grubs, dryness(now));
           }
         }
       } else if (d.species.diet !== 'carnivore' && browseAt(d.x, d.z) > 0.5) {
@@ -940,7 +941,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
       food.meat -= kg;
       n.hunger = Math.min(1, n.hunger + kg / stomach);
     }
-    if (act === 'browse') n.hunger = Math.min(1, n.hunger + NEEDS.browseRate * dt);
+    if (act === 'browse') n.hunger = Math.min(1, n.hunger + NEEDS.browseRate * lerp(1, SEASON.browse, dryness(w.tick * TICK_DT)) * dt);
     stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, needPace(d.species.mass), d.species.ecto ? ectoGap(d.species.mass) : 1);
     d.age += dt;
     d.hitT += dt;
@@ -1010,6 +1011,8 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   // Last tick's sounds are what everyone hears this tick (an order-free snapshot); this tick's start empty.
   const heard = w.events.slice();
   w.events.length = 0;
+  // The water level follows the season (sim/season.ts).
+  setWaterLevel(POND_Y - SEASON.drop * dryness(w.tick * dt));
   const cmds: Record<number, Command> = 'moveX' in cmd ? { 0: cmd as Command } : (cmd as Record<number, Command>);
   for (const slot of w.players) stepPlayer(w, slot, cmds[slot.id] ?? IDLE, dt);
   stepCounters(w, dt);
