@@ -15,13 +15,13 @@ const secs = (w: World, s: number, cmd: Command | ((w: World) => Command) = idle
 
 // Open ground with just the player and one Saurosuchus. x = -4: a lane with no trunk between them (a Dicroidium
 // grove grew across the old one at x = -10).
-function arena(growth: number, gap: number, hungry = true): World {
+function arena(growth: number, gap: number, hungry = true, x = -4): World {
   const w = createWorld(5, 1, growth);
   w.herbivores = [];
   w.carcasses = [];
-  w.player = createDino(HERRERASAURUS, -4, 20, Math.PI, growth);
-  const s = createSauro(500, -4, 20 + gap);
-  s.homeX = -4;
+  w.player = createDino(HERRERASAURUS, x, 20, Math.PI, growth);
+  const s = createSauro(500, x, 20 + gap);
+  s.homeX = x;
   s.homeZ = 20;
   s.yaw = Math.PI;
   if (!hungry) s.lastMeal = 1e9;
@@ -115,6 +115,16 @@ describe('Saurosuchus', () => {
       return idle;
     });
     expect(w.player.alive).toBe(false);
+    expect(w.lastDeath?.cause).toBe('Saurosuchus');
+  });
+
+  it('goes round a tree trunk between it and its quarry (the old lane, a Dicroidium in the way)', () => {
+    const w = arena(0.7, 12, true, -10);
+    secs(w, 30, (ww) => {
+      ww.player.needs.hunger = 1;
+      ww.player.needs.thirst = 1;
+      return idle;
+    });
     expect(w.lastDeath?.cause).toBe('Saurosuchus');
   });
 

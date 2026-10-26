@@ -11,6 +11,7 @@ import { clamp, lerp, smooth, wrapAngle } from './math';
 import { rng } from './rng';
 import { HYPERODAPEDON, stepHerbivore, type Herbivore, type Herd, type Predator } from './herbivore';
 import { plume } from './scent';
+import { concealment } from './cover';
 import { layTrails, newTrails, readTrail, type TrailLayer, type Trails } from './trails';
 import { createSauro, SAUROSUCHUS, stepSauro, type Quarry, type Sauro } from './saurosuchus';
 import { biteCap, biteDamage } from './combat';
@@ -257,7 +258,7 @@ function predatorOf(slot: PlayerSlot): Predator {
   // still. Grazers don't run from a rooting aetosaur (it doesn't hunt them).
   return {
     id: slot.entity, x: d.x, z: d.z, speed: d.speed, alive: d.alive, mass: d.body.mass,
-    stealth: lerp(1, 0.5, d.rest) * lerp(1, 0.15, d.under), hunts: d.species.diet !== 'rooter',
+    stealth: lerp(1, 0.5, d.rest) * lerp(1, 0.15, d.under) * (1 - 0.8 * d.hidden), hunts: d.species.diet !== 'rooter',
   };
 }
 function predatorOfSauro(s: Sauro): Predator {
@@ -723,6 +724,8 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
   const d = slot.dino;
   // A cold-blooded animal slows down as the sun goes (warms up again at dawn).
   d.chill = d.species.ecto ? 1 - daylight(dayTime(w.tick * TICK_DT)) : 0;
+  // In the plants it's harder to see (lying down, more so; moving, less).
+  d.hidden = d.alive && d.egg === 0 && d.swim < 0.5 ? concealment(d.x, d.z, d.body.hip, d.rest, d.speed) : 0;
   if (!d.alive) {
     stepDino(d, cmd, dt);
     if (cmd.respawn) {
@@ -922,15 +925,15 @@ export function step(w: World, cmd: Command | Record<number, Command>): void {
   const quarry: Quarry[] = [];
   for (const slot of w.players) {
     const p = slot.dino;
-    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass, bleeding: bleeding(p) });
+    if (p.alive) quarry.push({ id: slot.entity, x: p.x, z: p.z, speed: p.speed, topSpeed: p.body.sprintMax, mass: p.body.mass, bleeding: bleeding(p), hidden: p.hidden });
   }
   for (const h of w.herbivores) {
-    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass, bleeding: h.bleeding > 0 });
+    if (h.state !== 'dead') quarry.push({ id: h.id, x: h.x, z: h.z, speed: h.speed, topSpeed: HYPERODAPEDON.flee, mass: HYPERODAPEDON.mass, bleeding: h.bleeding > 0, hidden: concealment(h.x, h.z, HYPERODAPEDON.hip, h.state === 'sleep' ? 1 : 0, h.speed) });
   }
   for (const s of w.sauros) {
     const was = s.state;
     stepSauro(s, {
-      now, rand: w.rng.ai, quarry, heard, night, carcasses: w.carcasses,
+      now, rand: w.rng.ai, quarry, heard, night, carcasses: w.carcasses, trail: (x, z) => readTrail(w.trails, now, x, z, s.id),
       bite: (id) => {
         w.events.push({ kind: 'bite', who: 'saurosuchus', ...mouth(s.x, s.z, s.yaw, 0.4 * SAUROSUCHUS.length, 0.9), level: 96, yaw: s.yaw });
         const slot = w.players.find((k) => k.entity === id);

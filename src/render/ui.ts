@@ -195,6 +195,8 @@ export class Ui {
       : d.jump ? (d.jump.ph === 'crouch' ? 'Crouching to jump' : 'Airborne')
       : d.resting ? (d.stamina < 0.995 ? 'Lying down, resting' : 'Lying down, rested') : d.rest > 0.05 ? 'Getting up'
       : sp < 0.15 ? 'Standing' : `${sp > 1.08 * d.body.walk ? (sp < 0.68 * d.body.sprintMax ? 'Running' : 'Sprinting') : 'Walking'} · ${sp.toFixed(1)} m/s`;
+    if (d.alive && d.hidden > 0.6) this.el('pace').textContent += ' · hidden in the plants';
+    else if (d.alive && d.hidden > 0.3) this.el('pace').textContent += ' · half hidden';
 
     const hint = d.act === 'drink' ? 'Drinking' : d.act === 'eat' ? 'Eating' : d.act === 'browse' ? 'Browsing' : d.act === 'dig' ? 'Digging for grubs'
       : d.act === 'bite' ? (d.grip >= 0 && d.species.attack === 'grab' ? 'Holding it down and biting' : d.grip >= 0 ? 'Holding on' : 'Biting')

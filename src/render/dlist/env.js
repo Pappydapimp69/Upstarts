@@ -7,6 +7,7 @@ import { fbm, vnoise } from '../../sim/noise';
 import { rng } from '../../sim/rng';
 import { heightAt, MUDS, MUD_Y, PONDS, SPAWNS, WATER_Y, MAP_RADIUS } from '../../sim/terrain';
 import { TREES } from '../../sim/flora';
+import { SHRUBS } from '../../sim/cover';
 import { groundAt } from '../../sim/ground';
 import { WIND } from '../../sim/scent';
 
@@ -324,8 +325,9 @@ function scatter(scene, geo, mat, list, { shadow = true } = {}) {
 }
 
 // The understory (owner: the valley needs more vegetation). Ischigualasto's flora, no grass yet: low ferns filling
-// the gaps, Dicroidium seed-fern shrubs round the groves, and squat cycad-like plants. Scenery only: no collision, and none of it casts shadows (phones: render-only plants
-// are where the triangle budget goes, docs/PERF.md).
+// the gaps, Dicroidium seed-fern shrubs round the groves, and squat cycad-like plants. The shrubs and cycads are the
+// sim's (sim/cover.ts SHRUBS): they hide what's in them. No collision, and none of it casts shadows (phones: the
+// understory is where the triangle budget goes, docs/PERF.md).
 function buildUnderstory(scene, fernMat, nearSpawn) {
   const R = rng(20261026);
   const ok = (x, z, pad = 0.3) => {
@@ -359,13 +361,8 @@ function buildUnderstory(scene, fernMat, nearSpawn) {
   shrub.setAttribute('position', new THREE.Float32BufferAttribute(sPos, 3));
   shrub.setAttribute('color', new THREE.Float32BufferAttribute(sCol, 3));
   shrub.computeVertexNormals();
-  const dTrees = TREES.filter((t) => t.kind === 'dicroidium');
-  const sl = [];
-  for (let i = 0; i < 1500 && sl.length < 170; i++) {
-    const [x, z] = R() < 0.7 ? near(dTrees[(R() * dTrees.length) | 0], 1.5, 8) : ring(6, 80);
-    if (!ok(x, z, 0.6) || sl.some((o) => Math.hypot(o.x - x, o.z - z) < 1.2)) continue;
-    sl.push({ x, y: heightAt(x, z) - 0.05, z, s: lerp(0.6, 1.2, R()), ry: R() * 6.28 });
-  }
+  const placed = (kind, sink) => SHRUBS.filter((o) => o.kind === kind).map((o) => ({ x: o.x, y: heightAt(o.x, o.z) - sink, z: o.z, s: o.s, ry: o.ry }));
+  const sl = placed('shrub', 0.05);
   scatter(scene, shrub, fernMat, sl, { shadow: false });
 
   // Cycad-like plants: a squat scaly trunk under a crown of stiff, straight fronds.
@@ -382,17 +379,11 @@ function buildUnderstory(scene, fernMat, nearSpawn) {
   const trunk = mergeColored([
     { geo: new THREE.CylinderGeometry(0.15, 0.2, 0.65, 8), color: (x, y) => new THREE.Color('#5a4630').multiplyScalar(0.75 + 0.35 * ((Math.floor(y * 22) % 2) ? 1 : 0)), matrix: M4().makeTranslation(0, 0.32, 0) },
   ]);
-  const cl = [];
-  for (let i = 0; i < 1200 && cl.length < 80; i++) {
-    const [x, z] = ring(6, 82);
-    if (!ok(x, z, 1) || cl.some((o) => Math.hypot(o.x - x, o.z - z) < 2)) continue;
-    cl.push({ x, y: heightAt(x, z) - 0.04, z, s: lerp(0.7, 1.4, R()), ry: R() * 6.28 });
-  }
+  const cl = placed('cycad', 0.04);
   scatter(scene, trunk, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.4 }), cl, { shadow: false });
   const cMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide, envMapIntensity: 0.5 });
   addWind(cMat, 0.02, 'cycad');
   scatter(scene, crown, cMat, cl, { shadow: false });
-
 }
 
 export function buildPlants(scene) {

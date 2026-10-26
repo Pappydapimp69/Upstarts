@@ -1,11 +1,12 @@
 import { clamp, damp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
-import { pushOutOfTrees } from './flora';
+import { pushOutOfTrees, steerRoundTrees } from './flora';
 import { pushOutOfRocks } from './ground';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
 import { loudestAt, SETTLE, WAKE_DB, WAKE_NEAR } from './clock';
+import type { TrailRead } from './trails';
 
 // Saurosuchus: the apex predator, a big crocodile-line archosaur. Rare, roams a
 // territory, ambushes. Numbers are game design informed by the anatomy (blueprint §2):
@@ -39,6 +40,7 @@ export const SAUROSUCHUS = {
   sight: 50,
   smell: 0.12,
   bloodSmell: 3, // a bleeding animal smells this many times stronger to it
+  bloodFresh: 120, // s: blood on the ground younger than this, it follows
   hears: 45, // dB: the quietest footfall or call it notices
   stealth: 0.35, // multiplier on how far away prey can see it while it stalks (low and crouched)
   eatRate: 1, // kg/s
@@ -77,6 +79,7 @@ export interface Sauro {
   biteT: number;
   gait: number; // footfalls so far (4 per stride), for footstep events
   threat: number; // id of what it's running from (flee), -1 none
+  tracking: boolean; // following a blood trail
 }
 
 // Something it could hunt this tick: the player or a herbivore.
@@ -88,12 +91,13 @@ export interface Quarry {
   topSpeed: number;
   mass: number;
   bleeding?: boolean; // wounded: its blood carries much further on the wind
+  hidden?: number; // in the plants: 0 in the open .. 1 out of sight (sim/cover.ts)
 }
 
 export function createSauro(id: number, x: number, z: number): Sauro {
   return {
     id, x, z, yaw: 0, speed: 0, health: 1, stamina: 1, state: 'patrol', stateT: 0, homeX: x, homeZ: z,
-    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0, wokeAt: -999, threat: -1,
+    wanderX: x, wanderZ: z, target: -1, lastMeal: -999, eaten: 0, biteT: 9, gait: 0, wokeAt: -999, threat: -1, tracking: false,
   };
 }
 
@@ -107,7 +111,7 @@ export function catchRadius(vq: number): number {
 export function sensesQuarry(s: Sauro, q: Quarry, heard: SoundEvent[] = []): boolean {
   const dx = q.x - s.x, dz = q.z - s.z, d = Math.hypot(dx, dz);
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - s.yaw)) < 1.4;
-  if (ahead && d < SAUROSUCHUS.sight) return true;
+  if (ahead && d < SAUROSUCHUS.sight * (1 - 0.85 * (q.hidden ?? 0))) return true;
   if (heardFrom(heard, q.id, s.x, s.z, SAUROSUCHUS.hears)) return true;
   return plume(q.x, q.z, q.bleeding ? SAUROSUCHUS.bloodSmell : 1, s.x, s.z) > SAUROSUCHUS.smell;
 }
@@ -123,6 +127,7 @@ export interface SauroWorld {
   // Called when its jaws close on something: returns nothing; the world applies damage.
   bite: (targetId: number) => void;
   eat: (carcassId: number, kg: number) => number; // returns kg actually eaten
+  trail?: (x: number, z: number) => TrailRead | null; // what's on the ground under its snout (sim/trails.ts)
 }
 
 const steerTo = (s: Sauro, x: number, z: number): number => Math.atan2(x - s.x, z - s.z);
@@ -221,13 +226,24 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
           set('stalk');
           break;
         }
+        // Nothing in sight or on the wind: a fresh blood trail under its snout, it follows, toward the newer drops.
+        const nose = { x: s.x + Math.sin(s.yaw) * S.reach, z: s.z + Math.cos(s.yaw) * S.reach };
+        const r = w.trail?.(nose.x, nose.z);
+        if (r && r.kind === 'blood' && r.yaw !== null && r.age < S.bloodFresh) {
+          s.wanderX = nose.x + Math.sin(r.yaw) * 8;
+          s.wanderZ = nose.z + Math.cos(r.yaw) * 8;
+          s.tracking = true;
+          if (s.state === 'rest') set('patrol');
+          s.stateT = 0;
+        }
       }
       if (s.state === 'rest') {
         if (s.stateT > 20) set('patrol');
         break;
       }
-      // Wander its territory.
-      if (Math.hypot(s.wanderX - s.x, s.wanderZ - s.z) < 4 || s.stateT > 60) {
+      // Wander its territory (unless it's on a blood trail: then on to the next stretch of it, or it's lost it).
+      if (s.tracking && Math.hypot(s.wanderX - s.x, s.wanderZ - s.z) < 2) s.tracking = false;
+      if (!s.tracking && (Math.hypot(s.wanderX - s.x, s.wanderZ - s.z) < 4 || s.stateT > 60)) {
         const a = w.rand() * Math.PI * 2, r = w.rand() * S.territory;
         s.wanderX = s.homeX + Math.cos(a) * r;
         s.wanderZ = s.homeZ + Math.sin(a) * r;
@@ -319,6 +335,8 @@ export function stepSauro(s: Sauro, w: SauroWorld, dt: number): void {
     }
   }
 
+  // Round any trunk in the way, looking further ahead the faster it goes.
+  if (target > 0.1) yaw = steerRoundTrees(s.x, s.z, yaw, 0.9, 2.5 + s.speed * 0.6);
   const dy = wrapAngle(yaw - s.yaw);
   s.yaw = wrapAngle(s.yaw + clamp(dy, -turn * dt, turn * dt));
   if (Math.abs(dy) > 1.2) target *= 0.5;

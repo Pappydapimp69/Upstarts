@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { layTrails, newTrails, readTrail, TRAIL } from '../src/sim/trails';
 import { createWorld, step, TICK_DT, TICK_HZ } from '../src/sim/world';
-import { createSauro, sensesQuarry } from '../src/sim/saurosuchus';
+import { createSauro, sensesQuarry, stepSauro } from '../src/sim/saurosuchus';
 import { WIND } from '../src/sim/scent';
 
 const walker = (x: number, z: number, bleeding = false) => [{ id: 7, x, z, what: 'Hyperodapedon' as const, scent: true, bleeding }];
@@ -64,5 +64,25 @@ describe('trails', () => {
     const q = (bleeding: boolean) => ({ id: 2, x: -WIND.x * d, z: -WIND.z * d, speed: 0, topSpeed: 5, mass: 80, bleeding });
     while (sensesQuarry(s, q(false))) d += 2;
     expect(sensesQuarry(s, q(true))).toBe(true);
+  });
+});
+
+describe('Saurosuchus on a blood trail', () => {
+  it('a hungry one that crosses fresh blood follows it toward the newer drops', () => {
+    const run = (withTrail: boolean): { z: number; tracking: boolean } => {
+      const s = createSauro(1, -38, -34);
+      s.yaw = 0;
+      const blood = { kind: 'blood' as const, what: 'Hyperodapedon' as const, who: 5, age: 10, strength: 0.9, yaw: 0 };
+      for (let i = 0; i < 12 * TICK_HZ; i++) {
+        stepSauro(s, { now: i * TICK_DT, rand: () => 0.5, quarry: [], carcasses: [], bite: () => {}, eat: () => 0,
+          // A trail running north along x = -38.
+          trail: withTrail ? (x) => (Math.abs(x + 38) < 2 ? blood : null) : undefined }, TICK_DT);
+      }
+      return { z: s.z, tracking: s.tracking };
+    };
+    const on = run(true), off = run(false);
+    expect(on.z).toBeGreaterThan(-34 + 10);
+    expect(on.tracking).toBe(true);
+    expect(off.tracking).toBe(false);
   });
 });

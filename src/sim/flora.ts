@@ -81,6 +81,23 @@ export function browseAt(x: number, z: number): number {
   return smooth(0.35, 0.6, fbm(x * 0.09, z * 0.09, 71));
 }
 
+// Steer round trunks: if the nearest trunk ahead (within `look` m) would be brushed by a body of radius rad going
+// this way, turn just enough to pass it on the side it isn't on. Without this a charging animal pressed into a trunk,
+// slid along it, and gave up the chase (pushOutOfTrees only stops the overlap).
+export function steerRoundTrees(x: number, z: number, yaw: number, rad: number, look: number): number {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  let best = Infinity, turn = 0;
+  for (const t of TREES) {
+    const dx = t.x - x, dz = t.z - z, along = dx * fx + dz * fz;
+    if (along <= 0 || along > look || along > best) continue;
+    const lat = dx * fz - dz * fx, clear = t.r + rad + 0.3; // lat > 0: the trunk is on the +yaw side
+    if (Math.abs(lat) >= clear) continue;
+    best = along;
+    turn = -(lat >= 0 ? 1 : -1) * Math.min(1.2, (clear - Math.abs(lat)) / Math.max(0.6, along));
+  }
+  return yaw + turn;
+}
+
 // Push a circle of radius rad out of any trunk it overlaps. Returns the corrected position.
 export function pushOutOfTrees(x: number, z: number, rad: number): [number, number] {
   for (const t of TREES) {
