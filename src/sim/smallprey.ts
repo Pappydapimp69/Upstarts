@@ -2,6 +2,7 @@ import { clamp, damp, wrapAngle } from './math';
 import { MAP_RADIUS, SPAWNS, waterDepthAt } from './terrain';
 import { browseAt, pushOutOfTrees, TREES } from './flora';
 import { heardFrom } from './hearing';
+import { AIR } from './weather';
 import type { SoundEvent } from './events';
 import type { Predator } from './herbivore';
 
@@ -133,7 +134,7 @@ export function sensesSmall(s: Small, p: Predator, heard: SoundEvent[]): boolean
   if (!p.alive || p.mass < s.mass * 0.5) return false;
   const sp = SMALL[s.kind];
   const d = Math.hypot(p.x - s.x, p.z - s.z);
-  const seen = sp.alert * p.stealth * (0.3 + 0.7 * clamp(p.speed / 3, 0, 1));
+  const seen = sp.alert * AIR.sight * p.stealth * (0.3 + 0.7 * clamp(p.speed / 3, 0, 1));
   return d < seen || d < 2 || !!heardFrom(heard, p.id, s.x, s.z, sp.hears);
 }
 

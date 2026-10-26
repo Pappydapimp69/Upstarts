@@ -4,6 +4,7 @@ import { EGG, nestBlock, nestFor, TICK_DT, type World } from '../sim/world';
 import { balance, lowest, DIET, type Nutrient } from '../sim/diet';
 import { INJURY } from '../sim/injury';
 import { NEST } from '../sim/nest';
+import { isDrySeason, type Sky } from '../sim/weather';
 import { CLOCK, dayTime } from '../sim/clock';
 import { stageOf } from '../sim/growth';
 import { maxHp } from '../sim/combat';
@@ -46,6 +47,7 @@ const BINOMIAL: Record<SpeciesId, string> = {
   sanjuansaurus: 'Sanjuansaurus gordilloi',
 };
 const PICK_KEY = 'upstarts.species';
+const SKY: Record<Sky, string> = { clear: 'clear', rain: 'raining', fog: 'foggy', ash: 'ash falling' };
 
 const KEYS: Record<Device, [string, string][]> = {
   pad: [['Move', 'Left stick'], ['Camera', 'Right stick'], ['Sprint', 'Right trigger (hold)'], ['Drink / sniff', 'B (hold)'],
@@ -205,7 +207,7 @@ export class Ui {
 
     const stage = stageOf(d.growth);
     document.querySelector('.binomial')!.textContent = BINOMIAL[d.species.id];
-    this.el('meta').textContent = `${cap(stage)}${d.generation > 1 ? ` · generation ${d.generation}` : ''} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))} · Ischigualasto, about 231 million years ago`;
+    this.el('meta').textContent = `${cap(stage)}${d.generation > 1 ? ` · generation ${d.generation}` : ''} · about ${(d.species.length * d.body.size).toFixed(1)} m nose to tail · ${partOfDay(dayTime(w.tick * TICK_DT))}, ${SKY[w.weather.sky]} · ${isDrySeason(w.tick * TICK_DT) ? 'dry' : 'wet'} season · Ischigualasto, about 231 million years ago`;
 
     const n = d.needs;
     const diet = balance(d.nutrients, d.species.diet);

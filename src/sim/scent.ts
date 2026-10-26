@@ -9,12 +9,15 @@ export const WIND_FROM_YAW = Math.atan2(-WIND.x, -WIND.z); // heading that faces
 const RANGE = 70; // m downwind before a plume is too thin to matter
 const UPWIND = 3; // m: right next to the source you smell it whatever the wind
 
+import { AIR } from './weather';
+
 // Concentration at (px, pz) from a source of the given strength at (sx, sz). 0..strength.
 export function plume(sx: number, sz: number, strength: number, px: number, pz: number): number {
   const dx = px - sx, dz = pz - sz;
   const along = dx * WIND.x + dz * WIND.z;
   const cross = Math.abs(dx * WIND.z - dz * WIND.x);
   const dist = Math.hypot(dx, dz);
+  strength *= AIR.scent; // rain washes scent out of the air
   if (dist < UPWIND) return strength * (1 - dist / (UPWIND * 2));
   if (along <= 0 || along > RANGE) return 0;
   const sigma = 1.5 + 0.18 * along; // the plume widens downwind

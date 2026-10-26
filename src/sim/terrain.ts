@@ -5,6 +5,9 @@ import { lerp, smooth } from './math';
 // with the demo's pond carved into it.
 export const MAP_RADIUS = 90;
 export const WATER_Y = 0;
+// The ponds' surface right now: WATER_Y in the wet season, lower in the dry (weather.ts). Set at the start of
+// every world step from that world's time, like the air.
+export const WATER = { level: WATER_Y };
 export const TOO_DEEP = 1.12; // deeper than this and it won't wade further
 
 export interface Pond {
@@ -37,7 +40,7 @@ export function heightAt(x: number, z: number): number {
 }
 
 export function waterDepthAt(x: number, z: number): number {
-  return Math.max(0, WATER_Y - heightAt(x, z));
+  return Math.max(0, WATER.level - heightAt(x, z));
 }
 
 

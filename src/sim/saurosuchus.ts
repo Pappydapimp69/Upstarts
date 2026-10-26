@@ -1,6 +1,7 @@
 import { clamp, damp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
+import { AIR } from './weather';
 import { pushOutOfTrees } from './flora';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
@@ -94,7 +95,7 @@ export function catchRadius(vq: number): number {
 export function sensesQuarry(s: Sauro, q: Quarry, heard: SoundEvent[] = []): boolean {
   const dx = q.x - s.x, dz = q.z - s.z, d = Math.hypot(dx, dz);
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - s.yaw)) < 1.4;
-  if (ahead && d < SAUROSUCHUS.sight) return true;
+  if (ahead && d < SAUROSUCHUS.sight * AIR.sight) return true;
   if (heardFrom(heard, q.id, s.x, s.z, SAUROSUCHUS.hears)) return true;
   return plume(q.x, q.z, q.scent ?? 1, s.x, s.z) > SAUROSUCHUS.smell;
 }

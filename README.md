@@ -40,6 +40,12 @@ Add `?fast` to the URL to run hunger, thirst and growth 20x faster, and `?adult`
 - **Growth** is about twice as long: 5 h to adult for Herrerasaurus, 4 h Sanjuansaurus, 3 h Panphagia,
   2.5 h Eodromaeus.
 
+## Seasons and weather
+
+`src/sim/weather.ts`: a wet and a dry season, three in-game days each. In the dry one the pond drops up to
+0.6 m and thirst runs up to 30% faster. Weather comes in 8 to 22 minute spells: rain (scent carries half as
+far), fog (sight down to 40%), and ashfall (dim, brown, thirsty). Weather has its own RNG stream and is saved.
+
 ## Saves
 
 The game saves to this browser every 30 s and when the tab is hidden (`src/sim/save.ts`, versioned JSON with

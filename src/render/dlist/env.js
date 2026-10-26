@@ -167,11 +167,14 @@ export function buildWater(scene) {
         normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);`);
   };
   waterMat.customProgramCacheKey = () => 'water-v1';
+  const out = [];
   for (const W of PONDS) {
     const g = new THREE.CircleGeometry(W.r + 2, 96); g.rotateX(-Math.PI / 2);
     const w = new THREE.Mesh(g, waterMat); w.position.set(W.x, WATER_Y, W.z); w.receiveShadow = true; w.renderOrder = 2;
     scene.add(w);
+    out.push(w);
   }
+  return out;
 }
 
 /* ============================== plants & rocks ============================== */

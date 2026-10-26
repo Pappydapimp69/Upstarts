@@ -1,7 +1,7 @@
 // Versioned saves (blueprint §6, gap list "saves"). The whole world as JSON: every entity, the tick, and
 // where each RNG stream is, so a loaded world plays on exactly as the saved one would have. No DOM here;
 // the client decides where the text is kept (browser storage, an exported file).
-import { createWorld, type PlayerSlot, type World } from './world';
+import { createWorld, setConditions, type PlayerSlot, type World } from './world';
 import { bodyOf } from './growth';
 import { SPECIES, type SpeciesId } from './species';
 import type { Dino } from './dino';
@@ -9,7 +9,7 @@ import type { Dino } from './dino';
 export const SAVE_VERSION = 1;
 
 type StreamName = keyof World['rng'];
-const STREAMS: StreamName[] = ['spawn', 'herd', 'carcass', 'ai', 'prey', 'injury'];
+const STREAMS: StreamName[] = ['spawn', 'herd', 'carcass', 'ai', 'prey', 'injury', 'weather'];
 
 // A creature without its derived parts: species by id, body recomputed on load.
 type SavedDino = Omit<Dino, 'species' | 'body'> & { species: SpeciesId };
@@ -35,6 +35,7 @@ export interface SaveFile {
   grubs: World['grubs'];
   nests: World['nests'];
   blood: World['blood'];
+  weather?: World['weather'];
   extra?: Record<string, unknown>; // later systems' state, by name (older saves just lack it)
 }
 
@@ -59,7 +60,7 @@ export function saveWorld(w: World, now = Date.now()): string {
     rng: Object.fromEntries(STREAMS.map((k) => [k, w.rng[k].state])) as Record<StreamName, number>,
     players: w.players.map((p) => ({ ...p, dino: packDino(p.dino) })),
     carcasses: w.carcasses, herds: w.herds, herbivores: w.herbivores, sauros: w.sauros, smalls: w.smalls, grubs: w.grubs,
-    nests: w.nests, blood: w.blood,
+    nests: w.nests, blood: w.blood, weather: w.weather,
     extra: Object.fromEntries(saveHooks.map((h) => [h.name, h.save(w)])),
   };
   return JSON.stringify(f);
@@ -76,9 +77,10 @@ export function loadWorld(text: string): World {
   for (const p of f.players) w.players.push({ ...p, dino: unpackDino(p.dino) });
   Object.assign(w, {
     tick: f.tick, nextId: f.nextId, sauroGoneAt: f.sauroGoneAt, carcasses: f.carcasses, herds: f.herds, herbivores: f.herbivores,
-    sauros: f.sauros, smalls: f.smalls, grubs: f.grubs, nests: f.nests ?? [], blood: f.blood ?? [], events: [],
+    sauros: f.sauros, smalls: f.smalls, grubs: f.grubs, nests: f.nests ?? [], blood: f.blood ?? [], events: [], weather: f.weather ?? w.weather,
   });
   for (const h of saveHooks) if (f.extra && h.name in f.extra) h.load(w, f.extra[h.name]);
+  setConditions(w);
   return w;
 }
 

@@ -4,6 +4,9 @@ import { browseAt } from './sim/flora';
 import { lerp, smooth, wrapAngle } from './sim/math';
 import { heightAt, waterDepthAt } from './sim/terrain';
 import { SceneView } from './render/scene';
+import { WeatherFx } from './render/weatherFx';
+import { blend, type Sky } from './sim/weather';
+import { WATER } from './sim/terrain';
 import { HerreraAnimator } from './render/dlist/animator.js';
 import { fernCut } from './render/dlist/env.js';
 import { dayTime } from './sim/clock';
@@ -34,6 +37,8 @@ if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
 const view = new SceneView(document.body);
 const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
+const weatherFx = new WeatherFx();
+view.scene.add(weatherFx.group);
 const nestMeshes = new NestMeshes();
 view.scene.add(nestMeshes.group);
 const bloodMeshes = new BloodMeshes();
@@ -279,6 +284,15 @@ function frame(now: number): void {
   herrera.update({ x, z, yaw, speed: p.speed, accel: p.accel, yawRate: p.yawRate, act: p.act === 'nest' ? 'dig' : p.act, alive: p.alive,
     biteT: p.biteT, sprinting: isSprinting(p, cmd), size: rigScale(), dipY,
     air: Math.max(0, y - heightAt(x, z)), rest: p.rest, crouch: p.jump?.ph === 'crouch' ? Math.min(1, p.jump.t / p.jump.dur) : 0 }, dt);
+  {
+    // Weather: how much of each sky is showing, blended across a change.
+    const wx = world.weather, k = blend(wx, world.tick * TICK_DT);
+    const amt: Record<Sky, number> = { clear: 0, rain: 0, fog: 0, ash: 0 };
+    amt[wx.prev] += 1 - k;
+    amt[wx.sky] += k;
+    view.setWeather(WATER.level, 1 + 1.6 * amt.fog + 0.6 * amt.rain + 1.4 * amt.ash, 0.6 * amt.rain + 0.3 * amt.fog + 0.6 * amt.ash, amt.ash);
+    weatherFx.update(dt, cam.camera.position, amt, now / 1000);
+  }
   view.setTime(dayTime(world.tick * TICK_DT));
   herbMeshes.update(world.herbivores, a, dt);
   eggView.update(p, dt);

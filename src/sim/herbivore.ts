@@ -1,6 +1,7 @@
 import { clamp, damp, lerp, wrapAngle } from './math';
 import { heightAt, MAP_RADIUS, TOO_DEEP, waterDepthAt } from './terrain';
 import { plume } from './scent';
+import { AIR } from './weather';
 import { pushOutOfTrees } from './flora';
 import { heardFrom } from './hearing';
 import type { SoundEvent } from './events';
@@ -78,7 +79,7 @@ export function senses(h: Herbivore, p: Predator, heard: SoundEvent[] = []): boo
   const d = Math.hypot(dx, dz);
   // Sight: a wide field of view (eyes on the sides of the head), but a still animal is hard to pick out.
   const ahead = Math.abs(wrapAngle(Math.atan2(dx, dz) - h.yaw)) < 2.4;
-  const visible = HYPERODAPEDON.sight * p.stealth * (0.25 + 0.75 * clamp(p.speed / 4, 0, 1));
+  const visible = HYPERODAPEDON.sight * AIR.sight * p.stealth * (0.25 + 0.75 * clamp(p.speed / 4, 0, 1));
   if (ahead && d < visible) return true;
   if (heardFrom(heard, p.id, h.x, h.z, HYPERODAPEDON.hears)) return true;
   return plume(p.x, p.z, 1, h.x, h.z) > HYPERODAPEDON.smell;

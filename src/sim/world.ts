@@ -3,7 +3,7 @@
 import { createDino, IDLE, isSprinting, stepDino, type Act, type Command, type Dino, type Override } from './dino';
 import { NEEDS, needPace, stepNeeds } from './needs';
 import { browseAt } from './flora';
-import { heightAt, SPAWNS, waterDepthAt } from './terrain';
+import { heightAt, SPAWNS, WATER, WATER_Y, waterDepthAt } from './terrain';
 import { SPECIES, type SpeciesId } from './species';
 import { lerp, wrapAngle } from './math';
 import { rng, type Rng } from './rng';
@@ -20,6 +20,7 @@ import { CALLS, callLevel, heardAt, HERD_HEARS, roarStyle, SAURO_HEARS } from '.
 import { balance, dietGrowth, dietHeal, nourish, stepNutrients, type Food } from './diet';
 import { bloodScent, breakChance, INJURY, wound, type Blood } from './injury';
 import { NEST, type Nest } from './nest';
+import { AIR, firstWeather, setAir, stepWeather, waterDrop, type Weather } from './weather';
 
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
@@ -92,7 +93,7 @@ export interface World {
   seed: number;
   // One seeded stream per system, so a change in how often one system draws never shifts another's rolls
   // (Brain: test E2, prologue E22).
-  rng: { spawn: Rng; herd: Rng; carcass: Rng; ai: Rng; prey: Rng; injury: Rng };
+  rng: { spawn: Rng; herd: Rng; carcass: Rng; ai: Rng; prey: Rng; injury: Rng; weather: Rng };
   players: PlayerSlot[];
   // The local player (players[0]): its creature, last death, lives and species. Accessors, kept so the
   // client and tests can address "the player" without knowing about slots.
@@ -114,14 +115,15 @@ export interface World {
   eggs: boolean; // new hatchlings start inside an egg (the game; tests start hatched)
   nests: Nest[];
   blood: Blood[]; // drops left by bleeding players, on the scent field
+  weather: Weather;
 }
 
 // startGrowth: 0 hatches every new animal as a hatchling (the game); tests and ?adult start grown.
 export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId: SpeciesId = 'herrerasaurus', eggs = false): World {
-  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37), injury: rng(seed ^ 0x1b1d) };
+  const streams = { spawn: rng(seed ^ 0x51a7), herd: rng(seed ^ 0x4e2d), carcass: rng(seed ^ 0xca2c), ai: rng(seed ^ 0xa1a1), prey: rng(seed ^ 0x9e37), injury: rng(seed ^ 0x1b1d), weather: rng(seed ^ 0x3e47) };
   const w = {
     tick: 0, seed, rng: streams, players: [] as PlayerSlot[], carcasses: [], nextId: 1, needScale,
-    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs, nests: [], blood: [],
+    herds: [], herbivores: [], sauros: [], smalls: [], grubs: [], sauroGoneAt: -1, startGrowth, events: [], eggs, nests: [], blood: [], weather: firstWeather(),
   } as unknown as World;
   const local = (): PlayerSlot => w.players[0];
   Object.defineProperties(w, {
@@ -130,6 +132,7 @@ export function createWorld(seed = 1, needScale = 1, startGrowth = 0, speciesId:
     lives: { get: () => local().lives, set: (v: number) => (local().lives = v), enumerable: true },
     speciesId: { get: () => local().speciesId, set: (v: SpeciesId) => (local().speciesId = v), enumerable: true },
   });
+  setConditions(w);
   addPlayer(w, speciesId);
   for (const h of SAUROS.homes) w.sauros.push(createSauro(w.nextId++, h.x, h.z));
   for (let i = 0; i < CARCASS.start; i++) placeCarcass(w);
@@ -543,7 +546,7 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
     }
     const pace = needPace(d.species.mass), diet = balance(d.nutrients, d.species.diet);
     // An open wound doesn't heal until it clots.
-    stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, pace, d.bleed > 0 ? 0 : dietHeal(diet));
+    stepNeeds(n, isSprinting(d, cmd), dt, w.needScale, pace, d.bleed > 0 ? 0 : dietHeal(diet), AIR.thirst);
     stepNutrients(d.nutrients, d.species.diet, dt, w.needScale, pace);
     // Wounds bleed and clot (faster lying down); a broken leg mends while fed and watered.
     if (d.bleed > 0) {
@@ -605,6 +608,8 @@ function stepPlayer(w: World, slot: PlayerSlot, cmd: Command, dt: number): void 
 // cmd: the local player's command, or one per player number for co-op.
 export function step(w: World, cmd: Command | Record<number, Command>): void {
   const dt = TICK_DT;
+  stepWeather(w.weather, w.tick * TICK_DT, w.rng.weather);
+  setConditions(w);
   // Last tick's sounds are what everyone hears this tick (an order-free snapshot); this tick's start empty.
   const heard = w.events.slice();
   w.events.length = 0;
@@ -747,4 +752,11 @@ function stepNests(w: World, now: number, dt: number): void {
     }
   }
   w.nests = w.nests.filter((n) => n.eggs > 0 && now - n.laidAt < NEST.life);
+}
+
+// The season's pond level and the weather's air, for this world at its own time (read by every system).
+export function setConditions(w: World): void {
+  const t = w.tick * TICK_DT;
+  WATER.level = WATER_Y - waterDrop(t);
+  setAir(w.weather, t);
 }
