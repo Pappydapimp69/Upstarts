@@ -29,6 +29,7 @@ import { initInput, readInput } from './input/input';
 import { objectiveOf } from './sim/objective';
 import { FrameStats } from './render/frameStats';
 import { TrailView } from './render/trailView';
+import { loadSave, writeSave } from './render/saveStore';
 import type { SpeciesId } from './sim/species';
 import { bodyScale } from './sim/balance';
 import { Marker } from './render/marker';
@@ -38,14 +39,17 @@ import { CoatView, coatText } from './render/coatView';
 // ?fast runs hunger, thirst and growth 20x faster, to try the loop quickly. ?adult starts fully grown.
 const params = new URLSearchParams(location.search);
 const stats = params.has('fps') ? new FrameStats() : null; // frame meter for checking a phone
-const world = createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
+// A saved life carries on (render/saveStore.ts); ?new starts over, and test runs (?debug, ?adult) never load one.
+const saved = params.has('new') || params.has('debug') || params.has('adult') ? null : loadSave();
+const world = saved ?? createWorld((Math.random() * 2 ** 31) | 0, params.has('fast') ? 20 : 1, params.has('adult') ? 1 : 0, undefined, !params.has('adult'));
 // Testing (the owner's call): growth runs 101x (+10000%), so a Herrerasaurus is adult in about 90 s of
 // fed play. ?realgrowth turns it off.
 const TEST_GROWTH = params.has('realgrowth') ? 1 : 101;
 world.growScale = TEST_GROWTH;
 document.getElementById('growChip')!.hidden = TEST_GROWTH === 1;
 const ui = new Ui();
-if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
+if (saved) ui.setContinue(world.player);
+else if (ui.selected !== world.speciesId) hatchAs(world, ui.selected);
 const view = new SceneView(document.body);
 const carcassMeshes = new CarcassMeshes();
 view.scene.add(carcassMeshes.group);
@@ -180,6 +184,7 @@ function frame(now: number): void {
       }
       started = true;
       ui.showIntro(false);
+      ui.setContinue(null);
       inp.confirm = false; // the press that started the game must not also tear the egg
     }
     acc = 0;
@@ -336,8 +341,21 @@ function frame(now: number): void {
     const snout = herrera.snout();
     audio.update(view.camera.position, cam.yaw, snout, s0 ? { x: s0.x, y: groundAt(s0.x, s0.z) + 1, z: s0.z } : null, tract());
   }
+  // Autosave every 15 s of play, and whenever the page is hidden or closed (below).
+  if (live && SAVING && (saveT += dt) > 15) {
+    saveT = 0;
+    writeSave(world);
+  }
   requestAnimationFrame(frame);
 }
+// Test runs never write over the real save.
+const SAVING = !(params.has('debug') || params.has('adult'));
+let saveT = 0;
+const saveNow = (): void => {
+  if (started && SAVING) writeSave(world);
+};
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && saveNow());
+window.addEventListener('pagehide', saveNow);
 // ?debug exposes the world and camera for automated checks (screenshots, headless playtests).
 if (params.has('debug')) (window as unknown as { __up: unknown }).__up = { world, cam, groundAt, hatch: (id: SpeciesId) => hatchAs(world, id), zoom: (z: number) => (viewZoom = z), start: () => { started = true; ui.showIntro(false); } };
 requestAnimationFrame(frame);

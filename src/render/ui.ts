@@ -109,6 +109,7 @@ export class Ui {
   pick(id: SpeciesId): void {
     this.selected = id;
     document.querySelectorAll<HTMLElement>('.sp').forEach((b) => b.classList.toggle('on', b.dataset.sp === id));
+    this.introCta();
     try {
       localStorage.setItem(PICK_KEY, id);
     } catch {
@@ -131,8 +132,26 @@ export class Ui {
       .map(([a, b]) => `<div style="display:contents"><dt>${a}</dt><dd>${b}</dd></div>`).join('');
     const go = BTN[d].go;
     this.el('deathCta').textContent = d === 'touch' ? 'Tap a dinosaur to hatch again' : `Left and right to choose · ${go} to hatch again`;
-    this.el('introCta').textContent = d === 'touch' ? 'Tap a dinosaur to hatch' : `Left and right to choose · ${go} to hatch`;
+    this.device = d;
+    this.introCta();
     this.el('pauseHint').textContent = d === 'touch' ? 'Tap to resume' : d === 'pad' ? 'X toggles rumble · Start or A to resume' : 'V toggles rumble · Esc or Enter to resume';
+  }
+
+  // A saved life to carry on (render/saveStore.ts): the start card offers it; picking another species starts over.
+  private saved: { id: SpeciesId; text: string } | null = null;
+  private device: Device = inputState.device;
+  setContinue(d: Dino | null): void {
+    this.saved = d ? { id: d.species.id, text: `your ${d.species.name}, ${d.alive ? `${stageOf(d.growth)}, alive ${fmt(d.age)}` : 'dead'}` } : null;
+    if (d) this.pick(d.species.id);
+    this.introCta();
+  }
+  private introCta(): void {
+    const el = document.getElementById('introCta');
+    if (!el) return;
+    const touch = this.device === 'touch', go = BTN[this.device].go, s = this.saved;
+    el.textContent = !s ? (touch ? 'Tap a dinosaur to hatch' : `Left and right to choose · ${go} to hatch`)
+      : this.selected === s.id ? `${touch ? 'Tap' : go} to carry on: ${s.text}`
+      : `${touch ? 'Tap' : go} to start a new life as ${SPECIES[this.selected].name}. Your saved one ends.`;
   }
 
   showIntro(on: boolean): void {

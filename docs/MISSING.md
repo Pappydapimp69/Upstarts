@@ -63,7 +63,9 @@ makes them more expensive later. **Update 2026-10-25:** Upstarts is the game and
 - Player identity in world state: `players` map, creatures owned by a player id (T3).
 - Named RNG streams per system (spawns, AI, combat, weather) plus a cosmetic stream. Today there's one `rand`.
 - Sim-side footfall and body events, and AI hearing that reads them (E7).
-- Versioned save format (IndexedDB) with export/import. Records-only carry-over is built (D13); world saves aren't.
+- Versioned save format with export/import. **Built 2026-10-26:** the whole world saves to localStorage (sim/save.ts,
+  one slot, autosave every 15 s and on leaving the page; death stays permanent, a reload can't undo it). Export/import
+  isn't built.
 - Sim in a Web Worker (D7, still PROPOSED).
 - Replay-fingerprint test over a whole recorded session (per-tick tests exist; a recorded-command replay doesn't).
 
